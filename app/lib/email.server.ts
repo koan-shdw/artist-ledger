@@ -6,12 +6,14 @@ import {
   reportFor,
   reportText,
   monthLabel,
+  rangeReport,
 } from "./ledger";
 export async function sendReports(
   shop: string,
   data: Ledger,
   month: string,
   artistIds: string[],
+  manual?: { from: string; to: string; version: number },
 ) {
   if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM)
     throw Error(
@@ -21,8 +23,10 @@ export async function sendReports(
   if (!unique.length || unique.length > 500)
     throw Error("Select between 1 and 500 artists");
   const reports = unique.map((id) => {
-    const r = reportFor(data, month, id);
-    if (!r.artist.enabled)
+    const r = manual
+      ? rangeReport(data, manual.from, manual.to, id)
+      : reportFor(data, month, id);
+    if (!manual && !r.artist.enabled)
       throw Error(`${r.artist.name} is not selected for reports`);
     if (r.errors.length)
       throw Error(`${r.artist.name}: ${r.errors.join("; ")}`);
@@ -30,6 +34,7 @@ export async function sendReports(
       throw Error(`${r.artist.name} has a negative balance requiring review`);
     return r;
   });
+  if (manual) month = `manual:${manual.from}:${manual.to}:v${manual.version}`;
   let sent = 0,
     skipped = 0;
   const failures: string[] = [];
@@ -83,12 +88,12 @@ export async function sendReports(
           from: process.env.EMAIL_FROM,
           to: [r.artist.email],
           ...(r.replyTo ? { reply_to: r.replyTo } : {}),
-          subject: `${r.galleryName} — ${monthLabel(month)} artist sales statement`,
+          subject: `${r.galleryName} — ${monthLabel(r.month)} artist sales statement`,
           text: reportText(r),
         }),
         signal: AbortSignal.timeout(20000),
       });
-      const result = await response.json() as { id?: string };
+      const result = (await response.json()) as { id?: string };
       if (!response.ok || !result.id)
         throw Error(`Email provider returned ${response.status}`);
       await db.artistReport.update({

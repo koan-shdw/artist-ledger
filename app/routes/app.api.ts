@@ -33,9 +33,13 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const body = z
       .object({
-        action: z.enum(["save", "sync", "send"]),
+        action: z.enum(["save", "sync", "send", "sendManual"]),
         version: z.number().int().min(0),
         month: z
+          .string()
+          .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+          .optional(),
+        to: z
           .string()
           .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
           .optional(),
@@ -99,7 +103,19 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     if (!body.artistIds) throw Error("Select artists");
     return Response.json(
-      await sendReports(session.shop, data, body.month, body.artistIds),
+      await sendReports(
+        session.shop,
+        data,
+        body.month,
+        body.artistIds,
+        body.action === "sendManual"
+          ? {
+              from: body.month,
+              to: body.to ?? body.month,
+              version: row.version,
+            }
+          : undefined,
+      ),
     );
   } catch (e) {
     return Response.json(

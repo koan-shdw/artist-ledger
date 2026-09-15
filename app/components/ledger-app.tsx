@@ -157,7 +157,9 @@ export default function LedgerApp({
     try {
       let continuation: string | undefined;
       const recipients =
-        action === "send" ? [...(payload.artistIds as string[])] : [];
+        action === "send" || action === "sendManual"
+          ? [...(payload.artistIds as string[])]
+          : [];
       let recipientIndex = 0;
       const messages: string[] = [];
       while (true) {
@@ -168,7 +170,7 @@ export default function LedgerApp({
             action,
             version,
             ...payload,
-            ...(action === "send"
+            ...(action === "send" || action === "sendManual"
               ? {
                   artistIds: recipients.slice(
                     recipientIndex,
@@ -192,7 +194,7 @@ export default function LedgerApp({
           setNotice(result.message);
           continue;
         }
-        if (action === "send") {
+        if (action === "send" || action === "sendManual") {
           messages.push(result.message);
           recipientIndex++;
           setNotice(
@@ -257,7 +259,7 @@ export default function LedgerApp({
   const fmt = (n: number) => money(n, data.settings.currency);
   const getSent = (id: string) =>
     sent.find((s) => s.month === month && s.artistId === id);
-  async function downloadPdf(items: Report[]) {
+  async function downloadPdf(items: Report[], manual = false) {
     setBusy(true);
     setError("");
     try {
@@ -266,8 +268,10 @@ export default function LedgerApp({
       if (!response.ok) throw Error("Could not load the PDF font. Try again.");
       const bytes = await statementPdf(
         items.map((report) => ({
-          report: getSent(report.artist.id)?.snapshot ?? report,
-          saved: !!getSent(report.artist.id),
+          report: manual
+            ? report
+            : (getSent(report.artist.id)?.snapshot ?? report),
+          saved: !manual && !!getSent(report.artist.id),
         })),
         new Uint8Array(await response.arrayBuffer()),
       );
@@ -276,7 +280,7 @@ export default function LedgerApp({
       );
       const link = document.createElement("a");
       link.href = url;
-      link.download = `artist-statements-${month}.pdf`;
+      link.download = `artist-statements-${items[0]?.month ?? month}.pdf`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setNotice("PDF downloaded");
@@ -426,7 +430,7 @@ export default function LedgerApp({
               </p>
             </div>
             <div className="actions">
-              {(page === "Monthly reports" || page === "Monthly sales") && (
+              {page === "Monthly reports" && (
                 <div className="month-control">
                   <Label htmlFor="report-month">Report month</Label>
                   <div className="month-selectors">
@@ -528,18 +532,40 @@ export default function LedgerApp({
           )}
           {page === "Monthly sales" && (
             <>
-              <div className="actions">
-                <Button disabled={busy || dirty} onClick={sync}>
-                  Sync Shopify sales
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setPage("Monthly reports")}
-                >
-                  Review artist reports
-                </Button>
-              </div>
               <MonthlySales
+                dirty={dirty}
+                emailReady={emailReady}
+                onPdf={(items) => downloadPdf(items, true)}
+                onSync={async (months) => {
+                  if (demo) {
+                    setSetupOpen(true);
+                    return;
+                  }
+                  let latestVersion = version;
+                  try {
+                    for (const target of months) {
+                      const result = await call("sync", {
+                        month: target,
+                        version: latestVersion,
+                      });
+                      latestVersion = result.version;
+                    }
+                    await refresh();
+                    setNotice("Selected months synced");
+                  } catch (e) {
+                    await refresh();
+                    setError((e as Error).message);
+                  }
+                }}
+                onSend={async (from, to, artistIds) => {
+                  const result = await call("sendManual", {
+                    month: from,
+                    to,
+                    artistIds,
+                  });
+                  await refresh();
+                  setNotice(result.message);
+                }}
                 data={data}
                 month={month}
                 sent={sent}
@@ -586,8 +612,8 @@ export default function LedgerApp({
                     <span className="count">{reports.length}</span>
                   </h2>
                   <p>
-                    Select the artists to report to, then review their included
-                    items.
+                    Enable automatic monthly delivery for each artist, and
+                    review their included items.
                   </p>
                 </div>
                 <div className="actions">
@@ -687,6 +713,7 @@ export default function LedgerApp({
                         "Gallery split",
                         "Artist earnings",
                         "Statement",
+                        "Automatic monthly",
                       ].map((x) => (
                         <th key={x}>{x}</th>
                       ))}
@@ -757,6 +784,30 @@ export default function LedgerApp({
                                   ? "Needs review"
                                   : "Draft"}
                           </span>
+                        </td>
+                        <td>
+                          <Switch
+                            aria-label={
+                              "Enable automatic monthly reports for " +
+                              r.artist.name
+                            }
+                            checked={r.artist.automatic === true}
+                            onCheckedChange={(automatic) =>
+                              change({
+                                ...data,
+                                settings: {
+                                  ...data.settings,
+                                  automatic:
+                                    automatic || data.settings.automatic,
+                                },
+                                artists: data.artists.map((a) =>
+                                  a.id === r.artist.id
+                                    ? { ...a, automatic }
+                                    : a,
+                                ),
+                              })
+                            }
+                          />
                         </td>
                         <td>
                           <Button

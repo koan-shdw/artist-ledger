@@ -13,6 +13,7 @@ export const artistSchema = z.object({
     ),
   galleryBps: z.number().int().min(0).max(10000),
   enabled: z.boolean(),
+  automatic: z.boolean().optional(),
   vendor: z.string().max(255).optional(),
   agreementConfigured: z.boolean().optional(),
 });
@@ -288,12 +289,68 @@ export function money(amount: number, currency = "USD") {
     amount / minorUnits(currency),
   );
 }
-export function monthLabel(month: string) {
+export function monthLabel(month: string): string {
+  if (month.includes(".."))
+    return month.split("..").map(monthLabel).join(" – ");
   return new Date(month + "-01T12:00:00Z").toLocaleDateString("en", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   });
+}
+export function monthsBetween(from: string, to: string): string[] {
+  const valid = /^\d{4}-(0[1-9]|1[0-2])$/;
+  if (!valid.test(from) || !valid.test(to) || from > to)
+    throw Error("Choose a valid From / To month range");
+  const result: string[] = [];
+  let current = from;
+  while (current <= to) {
+    result.push(current);
+    const [year, month] = current.split("-").map(Number);
+    current =
+      month === 12
+        ? `${year + 1}-01`
+        : `${year}-${String(month + 1).padStart(2, "0")}`;
+    if (result.length > 120) throw Error("Choose a range of up to 120 months");
+  }
+  return result;
+}
+export function rangeReport(
+  data: Ledger,
+  from: string,
+  to: string,
+  artistId: string,
+): Report {
+  const months = monthsBetween(from, to);
+  const reports = months.map((month) => reportFor(data, month, artistId));
+  const first = reports[0];
+  const lines = reports.flatMap((r) =>
+    r.lines.map((l) => ({
+      ...l,
+      order: `${l.order} · ${monthLabel(r.month)}`,
+    })),
+  );
+  const net = reports.reduce((n, r) => n + r.net, 0);
+  const cost = reports.reduce((n, r) => n + r.cost, 0);
+  const gallery = reports.reduce((n, r) => n + r.gallery, 0);
+  const errors = reports.flatMap((r) =>
+    r.errors
+      .filter((e) => e !== "No included sales items")
+      .map((e) => `${monthLabel(r.month)}: ${e}`),
+  );
+  if (!lines.length) errors.push("No included sales items");
+  return {
+    ...first,
+    month: from === to ? from : `${from}..${to}`,
+    lines,
+    net,
+    cost,
+    gallery,
+    payout: net - cost - gallery,
+    invoice: Math.max(0, net - cost - gallery),
+    units: reports.reduce((n, r) => n + r.units, 0),
+    errors: [...new Set(errors)],
+  };
 }
 export function previousMonth(now = new Date()) {
   const d = new Date(now);

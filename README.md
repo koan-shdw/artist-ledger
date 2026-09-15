@@ -57,7 +57,7 @@ App and Shopify staff access use the store’s app permissions. All gallery quer
 
 Set up Resend with a verified sender; no email is sent by this package during installation or tests. In Settings, set the gallery reply-to email. Manual sending requires saved changes, valid artist emails, known costs, included sales items, and no unresolved refund warnings or negative balances.
 
-The included Cloudflare Cron Trigger runs every minute. On the first day of the month after 12:00 UTC, it creates jobs for opted-in stores covering the previous month, using each store’s timezone to select orders. Each invocation advances one import step or sends one artist statement. Jobs persist in D1 and use leases to prevent concurrent processing. Enable automatic reporting separately in each store’s Settings. Failed runs require review; the merchant can complete eligible reports with Review & send. The latest job result is visible in Settings. The optional protected `/jobs/monthly` endpoint advances one step using `Authorization: Bearer YOUR_CRON_SECRET`.
+The included Cloudflare Cron Trigger runs every minute. On the first day of the month after 12:00 UTC, it creates jobs for opted-in stores covering the previous month, using each store’s timezone to select orders. Each invocation advances one import step or sends one artist statement. Jobs persist in D1 and use leases to prevent concurrent processing. Enable **Automatic monthly** for each artist in Monthly reports and save. Enabling an artist also enables the store scheduler; Settings provides the store-wide pause switch. Artists without this explicit opt-in are not emailed automatically. Failed runs require review; the merchant can complete eligible reports with Review & send. The latest job result is visible in Settings. The optional protected `/jobs/monthly` endpoint advances one step using `Authorization: Bearer YOUR_CRON_SECRET`.
 
 Each artist/month has one immutable report and a unique provider idempotency key. Sent reports are skipped. Uncertain email requests may be retried within 23 hours using the same snapshot and key; after that, inspect provider logs and reconcile delivery before any operator reset. A successful provider response means accepted for delivery, not proof of inbox arrival. Bounce/delivery webhook handling is not included.
 
@@ -107,8 +107,17 @@ PDFs are generated in the browser. The bundled Noto Sans JP font supports Japane
 
 ## Monthly sales adjustments
 
-Open **Review all sales** from Monthly reports, or **Monthly sales** from the menu. Select a month to see its imported sales across every artist. Edit a sale's total net amount, total product cost, gallery percentage, and adjustment note. Blank fields use Shopify's amount or the default cost/agreement. Zero is a valid override. Reset restores the defaults for that sale. Save changes before exporting or sending.
+Open **Review all sales** from Monthly reports, or **Monthly sales** from the menu. Select a month to see its imported sales across every artist. Edit a sale's total net amount, total product cost, gallery percentage, and adjustment note. Fields show Shopify's amount or the default cost/agreement in blue. Overrides use normal text colour. Zero is a valid override. Reset restores the defaults for that sale. Save changes before exporting or sending.
 
 Adjustments are stored by month and Shopify sales-line ID, separately from the imported amounts, and survive re-syncs. Shopify data and default artist agreements are unchanged. Reports and PDFs use adjusted totals and include adjustment details. Percentage calculations are rounded once for each rate group within the artist's statement; cost-first agreements use the non-negative margin within that group. Review overrides after re-syncing refunds or changed orders.
 
 Monthly adjustments and item inclusion are locked once the artist/month has a frozen delivery snapshot. Sent reports keep their original values. Issuing replacement statements is not implemented.
+
+
+## Manual reports and date ranges
+
+In Monthly sales, choose All artists or an individual artist, then a single month or From / To range. Sync all months in the range. Changes remain attached to each source sale and month. Artist totals sum the monthly calculations, preserving monthly rounding and cost treatment. Search filters visible rows; the Include checkboxes determine the report contents.
+
+Save adjustments, then select Create manual report. Review recipient emails and amounts, export their PDF statements, or send individual itemised emails. Email delivery requires a configured sender. Each report covers the full selected date range. Missing costs, agreements, email addresses, incomplete imports and negative balances block sending.
+
+Manual delivery uses separate immutable snapshots and deduplication keys from automatic monthly statements. Repeating the same range and saved workspace version skips already-sent recipients. A changed saved workspace version permits a new manual statement. Automatic monthly selection is independent of manual recipient selection.

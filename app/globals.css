@@ -897,3 +897,124 @@ input:focus-visible {
 .month-selectors [data-slot="select-trigger"]:last-child {
   min-width: 90px;
 }
+
+/* Sales review uses the workspace typography, controls and table treatment. */
+.monthly-sales {
+  min-width: 0;
+}
+.sales-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 18px;
+  padding: 22px;
+  margin-bottom: 28px;
+  border: 1px solid #e0e7e2;
+  border-radius: 9px;
+  background: #f6f8f6;
+}
+.sales-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 170px;
+  color: #65796b;
+  font-size: 12px;
+}
+.sales-filter:first-child {
+  min-width: 230px;
+}
+.sales-filter [data-slot="select-trigger"] {
+  width: 100%;
+  background: white;
+}
+.sales-table {
+  min-width: 1210px;
+  table-layout: fixed;
+}
+.sales-table th:first-child {
+  width: 65px;
+}
+.sales-table th:nth-child(2) {
+  width: 250px;
+}
+.sales-table th:nth-child(3) {
+  width: 140px;
+}
+.sales-table th:nth-child(4) {
+  width: 60px;
+}
+.sales-table th:nth-child(5),
+.sales-table th:nth-child(6) {
+  width: 155px;
+}
+.sales-table th:nth-child(7) {
+  width: 135px;
+}
+.sales-table th:nth-child(8) {
+  width: 180px;
+}
+.sales-table th:last-child {
+  width: 85px;
+}
+.sales-table td {
+  vertical-align: top;
+  white-space: normal;
+  padding: 18px 14px;
+}
+.sales-table td input {
+  width: 100%;
+  min-width: 0;
+}
+.sales-table td small {
+  display: block;
+  margin-top: 7px;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.sales-table .sale-default {
+  color: #2166b5;
+  background: #f5f9ff;
+}
+.sales-totals-heading {
+  margin-top: 32px;
+}
+.manual-report-dialog {
+  max-width: 760px !important;
+}
+.manual-report-list {
+  max-height: 45vh;
+  overflow: auto;
+}
+.manual-report-row {
+  display: flex;
+  align-items: start;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid #e0e7e2;
+}
+.manual-report-row > div {
+  flex: 1;
+}
+.manual-report-row small {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  color: #65796b;
+}
+.manual-report-row .manual-error {
+  color: #a33c32;
+}
+@media (max-width: 700px) {
+  .sales-filter {
+    flex: 1;
+    min-width: 130px;
+  }
+  .sales-filter:first-child {
+    min-width: 100%;
+  }
+  .monthly-sales .report-heading {
+    flex-wrap: wrap;
+  }
+}

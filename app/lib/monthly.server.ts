@@ -84,7 +84,7 @@ export async function monthlyTick(now = new Date()) {
       }
     } else {
       if (!progress.artists) {
-        const enabled = data.artists.filter((a) => a.enabled);
+        const enabled = data.artists.filter((a) => a.automatic === true);
         progress.artists = enabled
           .filter((a) => {
             const r = reportFor(data, task.month, a.id);
@@ -95,9 +95,18 @@ export async function monthlyTick(now = new Date()) {
       }
       const cursor = progress.cursor ?? 0;
       if (cursor < progress.artists.length) {
-        const sent = await sendReports(task.shop, data, task.month, [
-          progress.artists[cursor],
-        ]);
+        const sent = await sendReports(
+          task.shop,
+          {
+            ...data,
+            artists: data.artists.map((a) => ({
+              ...a,
+              enabled: a.automatic === true,
+            })),
+          },
+          task.month,
+          [progress.artists[cursor]],
+        );
         progress.failed = (progress.failed ?? 0) + sent.failures.length;
         progress.cursor = cursor + 1;
         result = sent.message;

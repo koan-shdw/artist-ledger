@@ -22,6 +22,7 @@ test("monthly jobs advance one step, send one artist, and skip completed months"
     );
     const data = demoLedger();
     data.settings.automatic = true;
+    data.artists.forEach(a => {a.automatic = a.id === "a0"; a.enabled = false;});
     await db
       .prepare("INSERT INTO GalleryWorkspace (shop,payload) VALUES (?,?)")
       .bind("one.myshopify.com", JSON.stringify(data))
@@ -56,6 +57,8 @@ test("monthly jobs advance one step, send one artist, and skip completed months"
     const done = await db.prepare("SELECT status FROM MonthlyRun").first();
     assert.ok(["complete", "needs_review"].includes(done.status));
     const count = sends.length;
+    assert.equal(count, 1);
+    assert.equal(sends[0].artists[0], "a0");
     await monthlyTick(now);
     assert.equal(sends.length, count);
     assert.equal(syncCalls, 1);
