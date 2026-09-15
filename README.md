@@ -98,3 +98,9 @@ Based on the Shopify React Router app template; its original copyright and MIT l
 5. Review the selected month, recipient, and invoice amount before sending. Previously sent artist/month statements are retained and skipped.
 
 Historical reports reflect the chosen order month net of refunds as of the sync date. They do not recreate a past snapshot of prices or costs that Shopify no longer supplies; confirm costs before issuing them.
+
+## PDF statements
+
+Open an artist statement and choose **Download PDF**, or select artists and choose **Export PDF** for a combined document with each artist starting on a new page. Save edits before exporting. PDFs group included sales by product variant and show quantities, net sales, product costs, gallery share, and invoice amount. Incomplete agreements and unresolved reporting issues produce a clearly marked draft. Previously saved report snapshots retain their original figures.
+
+PDFs are generated in the browser. The bundled Noto Sans JP font supports Japanese artist and product names and is licensed under the SIL Open Font License in `public/fonts/LICENSE.txt`. Email delivery currently sends the itemised statement in the message body and requires a configured verified sender.

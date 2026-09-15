@@ -74,3 +74,11 @@ await build({
     },
   ],
 });
+await build({
+  entryPoints: ["app/lib/statement-pdf.ts"],
+  outfile: "tests/.generated/pdf.mjs",
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  packages: "external",
+});

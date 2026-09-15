@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import {
   Artist,
+  Report,
   Ledger,
   Sent,
   demoLedger,
@@ -254,6 +255,35 @@ export default function LedgerApp({
   const fmt = (n: number) => money(n, data.settings.currency);
   const getSent = (id: string) =>
     sent.find((s) => s.month === month && s.artistId === id);
+  async function downloadPdf(items: Report[]) {
+    setBusy(true);
+    setError("");
+    try {
+      const { statementPdf } = await import("@/lib/statement-pdf");
+      const response = await fetch("/fonts/NotoSansJP-Regular.ttf");
+      if (!response.ok) throw Error("Could not load the PDF font. Try again.");
+      const bytes = await statementPdf(
+        items.map((report) => ({
+          report: getSent(report.artist.id)?.snapshot ?? report,
+          saved: !!getSent(report.artist.id),
+        })),
+        new Uint8Array(await response.arrayBuffer()),
+      );
+      const url = URL.createObjectURL(
+        new Blob([new Uint8Array(bytes)], { type: "application/pdf" }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `artist-statements-${month}.pdf`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice("PDF downloaded");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "PDF export failed");
+    } finally {
+      setBusy(false);
+    }
+  }
   const shown = reports.filter(
     (r) =>
       r.artist.name.toLowerCase().includes(query.toLowerCase()) &&
@@ -537,6 +567,13 @@ export default function LedgerApp({
                 <div className="actions">
                   <Button
                     variant="outline"
+                    disabled={busy || dirty || !selected.length}
+                    onClick={() => downloadPdf(selected)}
+                  >
+                    <Download /> Export PDF
+                  </Button>
+                  <Button
+                    variant="outline"
                     disabled={!selected.length}
                     onClick={() =>
                       download(
@@ -546,7 +583,7 @@ export default function LedgerApp({
                       )
                     }
                   >
-                    <Download /> Export
+                    <Download /> CSV
                   </Button>
                   <Button
                     disabled={busy || !loaded || !selected.length || dirty}
@@ -666,10 +703,16 @@ export default function LedgerApp({
                         <td>{fmt(r.cost)}</td>
                         <td>
                           <span className="split-label">
-                            {r.artist.agreementConfigured === false ? "Set percentage" : `${r.artist.galleryBps / 100}%`}
+                            {r.artist.agreementConfigured === false
+                              ? "Set percentage"
+                              : `${r.artist.galleryBps / 100}%`}
                           </span>
                         </td>
-                        <td className="earnings">{r.artist.agreementConfigured === false ? "Set percentage" : fmt(r.payout)}</td>
+                        <td className="earnings">
+                          {r.artist.agreementConfigured === false
+                            ? "Set percentage"
+                            : fmt(r.payout)}
+                        </td>
                         <td>
                           <span
                             className={`status ${getSent(r.artist.id)?.status === "sent" ? "sent" : ""}`}
@@ -1439,14 +1482,10 @@ export default function LedgerApp({
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() =>
-                    download(
-                      `${viewed.artist.name}-${month}.txt`,
-                      reportText(viewed),
-                    )
-                  }
+                  disabled={busy || dirty}
+                  onClick={() => downloadPdf([viewed])}
                 >
-                  <Download /> Download statement
+                  <Download /> Download PDF
                 </Button>
                 {dirty && (
                   <Button onClick={save} disabled={busy || !loaded}>
