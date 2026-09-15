@@ -75,7 +75,7 @@ The install link comes from the actual registered Shopify app after the required
 - `npm run typecheck`: React Router route generation and TypeScript checks.
 - `npm run build`: client and server production bundles.
 
-The actual PostgreSQL migration, store OAuth installation, live Shopify sales sync, Resend delivery, Docker startup, scheduler hosting, and App Store review require verification after credentials and hosting are configured.
+GitHub Actions verified the PostgreSQL migration on PostgreSQL 17, all 22 tests, TypeScript checks, the production build, and the Docker image build. Store OAuth installation, live Shopify sales sync, Resend delivery, Docker runtime startup, scheduler hosting, and App Store review still require verification after credentials and hosting are configured.
 
 ## Sources
 
