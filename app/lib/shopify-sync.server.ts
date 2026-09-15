@@ -1,4 +1,4 @@
-import { linkVendorProducts } from "./ledger";
+import { importVendorArtists } from "./ledger";
 import { type Ledger, type Product, type SaleLine, minorUnits } from "./ledger";
 import { QUERIES } from "./queries";
 type Admin = {
@@ -192,7 +192,7 @@ export async function syncMonth(
     more = page.orders.pageInfo.hasNextPage;
     after = page.orders.pageInfo.endCursor;
   }
-  return {
+  return importVendorArtists({
     ...data,
     products,
     settings: {
@@ -214,5 +214,5 @@ export async function syncMonth(
         warnings: [...new Set(warnings)],
       },
     },
-  };
+  });
 }

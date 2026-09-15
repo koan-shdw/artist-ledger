@@ -1,4 +1,4 @@
-import { linkVendorProducts } from "./ledger";
+import { linkVendorProducts, importVendorArtists } from "./ledger";
 import { type Ledger, type Product, type SaleLine } from "./ledger";
 import { graphql, amount, monthBounds } from "./shopify-sync.server";
 import { QUERIES } from "./queries";
@@ -202,7 +202,7 @@ export async function advanceSync(
 export function finishSync(s: SyncState): Ledger {
   if (s.phase !== "complete") throw Error("Sync has not finished");
   const lineIds = new Set(s.lines.map((l) => l.id));
-  return {
+  return importVendorArtists({
     ...s.data,
     products: s.products,
     months: {
@@ -216,5 +216,5 @@ export function finishSync(s: SyncState): Ledger {
         warnings: [...new Set(s.warnings)],
       },
     },
-  };
+  });
 }

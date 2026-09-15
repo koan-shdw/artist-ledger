@@ -88,3 +88,32 @@ test("vendor links calculate artist payout and keep suppliers separate", () => {
     "",
   );
 });
+
+test("vendors create artists automatically without guessing agreements", async () => {
+  const { importVendorArtists } = await import("../app/lib/ledger.ts");
+  const d = emptyLedger();
+  d.products = [
+    {
+      id: "p",
+      title: "Print",
+      sku: "",
+      vendor: "Supplier",
+      artistId: "",
+      unitCost: 100,
+      included: true,
+    },
+  ];
+  const linked = importVendorArtists(d);
+  assert.equal(linked.artists.length, 1);
+  assert.equal(linked.products[0].artistId, linked.artists[0].id);
+  assert.equal(linked.artists[0].enabled, false);
+  assert.equal(linked.artists[0].agreementConfigured, false);
+  assert.deepEqual(importVendorArtists(linked), linked);
+  linked.artists[0].email = "artist@example.com";
+  linked.artists[0].galleryBps = 3500;
+  linked.artists[0].agreementConfigured = true;
+  linked.products.push({ ...d.products[0], id: "new" });
+  const next = importVendorArtists(linked);
+  assert.equal(next.products[1].artistId, next.artists[0].id);
+  assert.equal(next.artists[0].galleryBps, 3500);
+});

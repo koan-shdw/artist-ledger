@@ -14,6 +14,7 @@ export const artistSchema = z.object({
   galleryBps: z.number().int().min(0).max(10000),
   enabled: z.boolean(),
   vendor: z.string().max(255).optional(),
+  agreementConfigured: z.boolean().optional(),
 });
 export const productSchema = z.object({
   id: z.string(),
@@ -47,6 +48,31 @@ export const settingsSchema = z.object({
 });
 export type Artist = z.infer<typeof artistSchema>;
 export type Product = z.infer<typeof productSchema>;
+export function importVendorArtists(data: Ledger): Ledger {
+  const artists = data.artists.map((a) => ({ ...a }));
+  for (const vendor of new Set(
+    data.products.map((p) => p.vendor).filter((v): v is string => !!v),
+  )) {
+    if (artists.some((a) => a.vendor === vendor)) continue;
+    const matches = artists.filter((a) => !a.vendor && a.name === vendor);
+    if (matches.length === 1) matches[0].vendor = vendor;
+    else
+      artists.push({
+        id: "vendor:" + vendor,
+        name: vendor.slice(0, 120),
+        vendor,
+        email: "",
+        galleryBps: 0,
+        enabled: false,
+        agreementConfigured: false,
+      });
+  }
+  return {
+    ...data,
+    artists,
+    products: linkVendorProducts(data.products, artists),
+  };
+}
 export function linkVendorProducts(
   products: Product[],
   artists: Artist[],
@@ -148,6 +174,8 @@ export function reportFor(
   if (!artist) throw Error("Artist not found");
   const period = data.months[month];
   const errors: string[] = [];
+  if (artist.agreementConfigured === false)
+    errors.push("Set the gallery percentage for this artist");
   const lines = (period?.lines ?? [])
     .filter((l) => {
       const p = data.products.find((p) => p.id === l.productId);

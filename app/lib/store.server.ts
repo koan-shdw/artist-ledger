@@ -1,16 +1,27 @@
 import db from "../db.server";
 import {
   emptyLedger,
+  importVendorArtists,
   ledgerSchema,
   linkVendorProducts,
   type Ledger,
 } from "./ledger";
 export async function getWorkspace(shop: string) {
-  return db.galleryWorkspace.upsert({
+  const row = await db.galleryWorkspace.upsert({
     where: { shop },
     create: { shop, payload: JSON.stringify(emptyLedger()) },
     update: {},
   });
+  const linked = importVendorArtists(JSON.parse(row.payload));
+  if (JSON.stringify(linked) !== row.payload) {
+    await saveWorkspace(shop, row.version, linked);
+    return {
+      ...row,
+      payload: JSON.stringify(linked),
+      version: row.version + 1,
+    };
+  }
+  return row;
 }
 export async function saveWorkspace(
   shop: string,

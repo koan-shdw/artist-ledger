@@ -666,10 +666,10 @@ export default function LedgerApp({
                         <td>{fmt(r.cost)}</td>
                         <td>
                           <span className="split-label">
-                            {r.artist.galleryBps / 100}%
+                            {r.artist.agreementConfigured === false ? "Set percentage" : `${r.artist.galleryBps / 100}%`}
                           </span>
                         </td>
-                        <td className="earnings">{fmt(r.payout)}</td>
+                        <td className="earnings">{r.artist.agreementConfigured === false ? "Set percentage" : fmt(r.payout)}</td>
                         <td>
                           <span
                             className={`status ${getSent(r.artist.id)?.status === "sent" ? "sent" : ""}`}
@@ -801,9 +801,13 @@ export default function LedgerApp({
                         </td>
                         <td>{a.email || "Add an email"}</td>
                         <td>
-                          {a.galleryBps / 100}%{" "}
+                          {a.agreementConfigured === false
+                            ? "Set gallery percentage"
+                            : `${a.galleryBps / 100}%`}{" "}
                           <span className="muted">
-                            gallery / {(10000 - a.galleryBps) / 100}% artist
+                            {a.agreementConfigured === false
+                              ? ""
+                              : `gallery / ${(10000 - a.galleryBps) / 100}% artist`}
                           </span>
                         </td>
                         <td>
@@ -1190,13 +1194,14 @@ export default function LedgerApp({
               className="form-grid"
               onSubmit={(e) => {
                 e.preventDefault();
+                const artist = { ...editing, agreementConfigured: true };
+                const artists = data.artists.some((a) => a.id === artist.id)
+                  ? data.artists.map((a) => (a.id === artist.id ? artist : a))
+                  : [...data.artists, artist];
                 change({
                   ...data,
-                  artists: data.artists.some((a) => a.id === editing.id)
-                    ? data.artists.map((a) =>
-                        a.id === editing.id ? editing : a,
-                      )
-                    : [...data.artists, editing],
+                  artists,
+                  products: linkVendorProducts(data.products, artists),
                 });
                 setEditing(null);
               }}
@@ -1279,10 +1284,16 @@ export default function LedgerApp({
                 max="100"
                 step="0.01"
                 required
-                value={editing.galleryBps / 100}
+                value={
+                  editing.agreementConfigured === false
+                    ? ""
+                    : editing.galleryBps / 100
+                }
+                placeholder="Enter gallery percentage"
                 onChange={(e) =>
                   setEditing({
                     ...editing,
+                    agreementConfigured: true,
                     galleryBps: Math.round(Number(e.target.value) * 100),
                   })
                 }
