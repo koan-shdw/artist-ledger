@@ -14,7 +14,8 @@ updates:
         patterns:
           - "react-router"
           - "@react-router/*"
-      prisma:
+      cloudflare:
         patterns:
-          - "prisma"
-          - "@prisma/client"
+          - "wrangler"
+          - "miniflare"
+          - "@cloudflare/*"

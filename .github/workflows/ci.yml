@@ -8,22 +8,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: ledger
-          POSTGRES_PASSWORD: ci-only-password
-          POSTGRES_DB: artist_ledger
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U ledger -d artist_ledger"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
-      DATABASE_URL: postgresql://ledger:ci-only-password@localhost:5432/artist_ledger
       SHOPIFY_API_KEY: ci-placeholder
       SHOPIFY_API_SECRET: ci-placeholder
       SHOPIFY_APP_URL: https://example.com
@@ -35,11 +20,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npx prisma validate
       - run: npm run setup
-      - run: npx prisma migrate status
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
-      - name: Build Docker image
-        run: docker build -t artist-ledger:test .
+      - run: npx wrangler deploy --dry-run

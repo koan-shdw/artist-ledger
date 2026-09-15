@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "artist-ledger",
+  "main": "./workers/app.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "artist-ledger",
+      "database_id": "2ae99d29-7e40-458d-8ede-badd70e0d170",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "vars": {
+    "SHOPIFY_APP_URL": "https://artist-ledger.shdw-gallery.workers.dev",
+    "SHOPIFY_API_KEY": "f26399e21b46d87b1c49777e4118c35e",
+    "SCOPES": "read_products,read_inventory,read_orders",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
+  "account_id": "1e5e6aafb0d98f5b3bff42dc70fbe73a",
+}

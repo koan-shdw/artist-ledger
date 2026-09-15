@@ -1,5 +1,10 @@
 import db from "../db.server";
-import { emptyLedger, ledgerSchema, type Ledger } from "./ledger";
+import {
+  emptyLedger,
+  ledgerSchema,
+  linkVendorProducts,
+  type Ledger,
+} from "./ledger";
 export async function getWorkspace(shop: string) {
   return db.galleryWorkspace.upsert({
     where: { shop },
@@ -12,9 +17,14 @@ export async function saveWorkspace(
   version: number,
   value: Ledger,
 ) {
+  const payload = JSON.stringify(value);
+  if (new TextEncoder().encode(payload).byteLength > 1_500_000)
+    throw Error(
+      "This workspace exceeds the supported storage size. No changes were saved.",
+    );
   const result = await db.galleryWorkspace.updateMany({
     where: { shop, version },
-    data: { payload: JSON.stringify(value), version: { increment: 1 } },
+    data: { payload, version: { increment: 1 } },
   });
   if (!result.count)
     throw Error(
@@ -24,6 +34,16 @@ export async function saveWorkspace(
 }
 export function parseEdits(incoming: unknown, current: Ledger): Ledger {
   const value = ledgerSchema.parse(incoming);
+  for (const artist of value.artists) {
+    if (
+      artist.vendor &&
+      !current.products.some((p) => p.vendor === artist.vendor) &&
+      !current.artists.some(
+        (a) => a.id === artist.id && a.vendor === artist.vendor,
+      )
+    )
+      throw Error("Choose a vendor from the synced Shopify products.");
+  }
   if (new Set(value.artists.map((a) => a.id)).size !== value.artists.length)
     throw Error("Duplicate artist IDs");
   if (
@@ -47,15 +67,18 @@ export function parseEdits(incoming: unknown, current: Ledger): Ledger {
     ...current,
     settings: value.settings,
     artists: value.artists,
-    products: current.products.map((p) => {
-      const v = value.products.find((v) => v.id === p.id)!;
-      return {
-        ...p,
-        artistId: v.artistId,
-        unitCost: v.unitCost,
-        included: v.included,
-      };
-    }),
+    products: linkVendorProducts(
+      current.products.map((p) => {
+        const v = value.products.find((v) => v.id === p.id)!;
+        return {
+          ...p,
+          artistId: v.artistId,
+          unitCost: v.unitCost,
+          included: v.included,
+        };
+      }),
+      value.artists,
+    ),
     months: Object.fromEntries(
       Object.entries(current.months).map(([key, m]) => [
         key,

@@ -8,14 +8,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     const current = payload.current as string[];
     if (session) {
-        await db.session.update({
-            where: {
-                id: session.id
-            },
-            data: {
-                scope: current.toString(),
-            },
-        });
+        await db.updateSessionScope(session.id, current.toString());
     }
     return new Response();
 };

@@ -1,152 +1,107 @@
-# Install Artist Ledger
+# Install Artist Ledger on Cloudflare
 
-Artist Ledger runs inside Shopify Admin. Its server and PostgreSQL database run on your hosting account. The MIT-licensed source is free to use and modify; Shopify, hosting, database, domain, and email-provider charges are separate.
+Artist Ledger runs inside Shopify Admin. Its server runs on Cloudflare Workers and its records are stored in Cloudflare D1. The code is free under the MIT license.
 
-This guide uses Render for hosting and Resend for email. You can use another HTTPS host that runs Docker and connects to PostgreSQL. Allow time to create accounts and verify your sending domain.
+## Gallery staff
 
-## 1. Get the code and tools
+Once your operator has deployed and registered the app, open the Shopify installation link they provide, select your store, and click **Install**. Open **Apps → Artist Ledger** thereafter.
 
-Open [the GitHub repository](https://github.com/koan-shdw/artist-ledger). Click **Fork** if you want your own copy for changes and hosting. Install [Node.js 22.13 or later](https://nodejs.org/), [Git](https://git-scm.com/downloads), and the Shopify CLI:
+Choose a report month, sync sales, select artists from the Shopify vendor list, enter costs and gallery percentages, and save. Review each statement before sending. Sending becomes available after the operator configures a verified email sender.
+
+## Deploy your own copy
+
+These steps are for the person hosting an independent copy. Each copy needs its own Shopify app registration and Cloudflare resources.
+
+### 1. Get the source
+
+Fork this repository, clone your fork, and install Node.js 22.13 or later. Run:
 
 ```sh
-npm install -g @shopify/cli@latest
-git clone https://github.com/koan-shdw/artist-ledger.git
-cd artist-ledger
 npm ci
+npx wrangler login
+npx wrangler whoami
 ```
 
-If you forked it, substitute your fork's clone URL. Keep the terminal in this folder for subsequent commands. GitHub's **Code → Download ZIP** is another way to get the source; extract it and open a terminal in the extracted folder.
+Check that the displayed Cloudflare account is the account you intend to use.
 
-## 2. Register your Shopify app
+### 2. Register your Shopify app
 
-1. Sign in to the [Shopify Dev Dashboard](https://dev.shopify.com/) with an account that can develop apps for your store.
-2. Select **Apps → Create app → Start from Dev Dashboard** and name it **Artist Ledger**.
-3. Open the app's **Settings** and save its **Client ID** and **Client secret** in your password manager. They become `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET` below.
-4. Keep this app registration open. You will release its URLs and permissions after hosting is ready.
+Create an app in the [Shopify Dev Dashboard](https://dev.shopify.com/dashboard). Copy its Client ID. Keep the Client Secret private. Replace `client_id` in `shopify.app.toml` with your Client ID.
 
-The code handles Shopify authentication. You do not need to copy a store access token into it. Shopify documents [app registration and credentials](https://shopify.dev/docs/apps/build/dev-dashboard/create-apps-using-dev-dashboard).
-
-## 3. Create the database
-
-In [Render](https://dashboard.render.com/), select **New → Postgres**. Name it `artist-ledger-db`, choose PostgreSQL 17, and select a region. Choose a plan with persistence and backups appropriate for your live records. Copy the **Internal Database URL** for the app server; it contains credentials and must stay private. Put the web service in the same region. See [Render's database setup](https://render.com/docs/postgresql-creating-connecting).
-
-## 4. Set up the sender
-
-1. Create a [Resend account](https://resend.com/).
-2. Add a domain you own and add the DNS records Resend provides at your domain provider.
-3. Wait until Resend shows the domain as verified.
-4. Create an API key with permission to send email.
-5. Choose a sender such as `Your Gallery <statements@your-domain.com>`.
-
-Use this as `EMAIL_FROM`. Resend requires a [verified domain](https://resend.com/docs/dashboard/domains/introduction) for your sender. The gallery's reply-to address is entered separately inside Artist Ledger.
-
-## 5. Host the app server
-
-1. In Render select **New → Web Service** and connect your GitHub copy of Artist Ledger.
-2. Set **Language** to **Docker**, use the repository root, and choose the database's region. The included Dockerfile supplies the build and start commands.
-3. Choose your service name and note its assigned HTTPS address. Use that exact address for `SHOPIFY_APP_URL`, with no trailing slash. If Render assigns the final address after creation, update this variable and redeploy once it is available.
-4. Add the following variables in Render's **Environment** settings. Enter actual values privately in the host; never commit a filled `.env` file or paste secrets into a GitHub issue.
-
-| Variable | Value |
-| --- | --- |
-| `SHOPIFY_API_KEY` | Shopify app Client ID |
-| `SHOPIFY_API_SECRET` | Shopify app Client secret |
-| `SHOPIFY_APP_URL` | Your web service's HTTPS address |
-| `DATABASE_URL` | Render's Internal Database URL |
-| `SCOPES` | `read_products,read_inventory,read_orders` |
-| `RESEND_API_KEY` | Resend sending API key |
-| `EMAIL_FROM` | Your verified sender, e.g. `Your Gallery <statements@your-domain.com>` |
-| `CRON_SECRET` | A random secret of at least 32 characters |
-| `PORT` | `3000` |
-
-Generate `CRON_SECRET` locally with:
+### 3. Create the database
 
 ```sh
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+npx wrangler d1 create artist-ledger
 ```
 
-5. Click **Deploy**. Startup runs the included database migration and starts the server. Check the deployment logs for successful startup. Opening the HTTPS address should show the Artist Ledger Shopify login page.
-
-Render describes [deploying the included Dockerfile](https://render.com/docs/docker). The running server and database must remain available for app access, webhooks, and scheduled reports.
-
-## 6. Configure and release the Shopify app
-
-On your computer, open `shopify.app.toml` in a text editor:
-
-1. Set `client_id` to the Client ID from step 2. This ID is public; the Client secret belongs only in environment settings.
-2. Replace every `https://your-app.example.com` with your exact HTTPS service address. This updates the app URL and both authentication callback URLs.
-3. Preserve `embedded = true`, the three required scopes, and all webhook entries.
-4. For your first installation, set `optional_scopes = []` until Shopify has approved historical order access for your app. Step 9 explains enabling it later.
-
-Run:
+In `wrangler.jsonc`, replace the database ID with the returned ID and set `account_id` to your own Cloudflare account ID. Set `SHOPIFY_API_KEY` to your Shopify Client ID. The binding must remain `DB`.
 
 ```sh
-shopify app deploy
+npm run migrate:cloudflare
+npx wrangler secret put SHOPIFY_API_SECRET
 ```
 
-Sign in to the correct Shopify organization and verify the displayed app before confirming the release. The configured Client ID identifies the app; there is no need to run `config link`. That command can replace the supplied configuration, so preserve this file's required scopes and webhooks if you choose to use it.
+Paste the Client Secret at the private prompt. Wrangler may offer to create the Worker when adding its first secret.
 
-This command releases Shopify configuration. Your server is hosted separately in step 5. See [Shopify's deploy command](https://shopify.dev/docs/api/shopify-cli/app/app-deploy). If you forked the repo, save your configuration changes in your fork; it is safe to commit the public Client ID and URLs.
+### 4. Deploy
 
-## 7. Install in your store
+Choose a Workers subdomain in Cloudflare's **Workers & Pages** account settings, or follow Wrangler's first-deploy prompt. Set `SHOPIFY_APP_URL` in `wrangler.jsonc` to the resulting app address, such as `https://artist-ledger.YOUR-SUBDOMAIN.workers.dev`.
 
-For a single gallery's live installation, open the registered app's **Distribution** section in the Dev Dashboard, choose **Custom distribution**, and generate an installation link for your store. Enter the store's admin domain or confirmed `.myshopify.com` domain as requested. Open the generated link while signed in as a store owner or staff member with permission to install apps, and approve installation.
+Set `application_url` and the `/auth/callback` URL in `shopify.app.toml` to the same host. Keep the existing scopes and webhook paths.
 
-Open **Shopify Admin → Apps → Artist Ledger**. It should load inside Shopify Admin. Pin it in the app navigation if desired.
-
-Choose the distribution method for this registration deliberately: custom distribution supports one store or stores in the same Shopify Plus organization. A centrally hosted app serving unrelated stores needs public distribution and Shopify review. The distribution method cannot later be changed. Other galleries can independently register and host their own copy from this free source. See [Shopify's distribution rules](https://shopify.dev/docs/apps/launch/distribution/select-distribution-method).
-
-## 8. Prepare and send your first statement
-
-1. In **Settings**, enter the gallery details and reply-to email. Choose the calculation basis. The default deducts product costs, then applies the gallery percentage to the positive remainder.
-2. In **Artists**, add each artist's name, email, and gallery percentage. Select the artists who should receive reports and save.
-3. Choose the **Report month** and year, then click **Sync Shopify sales**.
-4. Assign products to their artists, verify or enter unit costs, choose included products, and save.
-5. Open each artist's statement and check the included sale items, costs, gallery share, and amount to invoice. Exclude any items that should not appear and save.
-6. Click **Review & send to artist** for one artist, or **Review & send** for the selected group. Verify the month, recipients, and amounts before sending.
-7. Check the report status and Resend delivery logs. Provider acceptance alone does not confirm inbox delivery.
-
-Do the first delivery check on a development store using an email address you control. A sent artist/month statement is frozen and skipped on later sends; this version has no corrected-statement workflow.
-
-## 9. Enable older months
-
-Shopify normally limits order access to the last 60 days. For older months:
-
-1. Request `read_all_orders` access for the app through the Dev Dashboard and wait for Shopify approval.
-2. Change the configuration to `optional_scopes = ["read_all_orders"]` and run `shopify app deploy` again.
-3. In Artist Ledger **Settings**, click **Enable historical-order access** and grant permission.
-4. Choose the past month and year, sync, verify costs and included items, then review and send.
-
-The app blocks older-month sync without that permission. Imported costs initially reflect current Shopify unit costs; correct them to the applicable historical costs before sending. See [Shopify order permissions](https://shopify.dev/docs/api/usage/access-scopes#orders-permissions).
-
-## 10. Optional automatic monthly reports
-
-After manual sending is verified, enable automatic reporting in the app's Settings. Configure an external scheduler to send this request on the first of each month at 12:00 UTC:
-
-```http
-POST https://YOUR-APP-HOST/jobs/monthly
-Authorization: Bearer YOUR_CRON_SECRET
+```sh
+npm run deploy:cloudflare
+npx @shopify/cli app deploy --allow-updates
 ```
 
-Keep the secret in the scheduler's secret store. The job syncs the previous calendar month and sends eligible reports to selected artists, using the saved item assignments, costs, and percentages. It does not wait for a monthly human review. Leave automatic reporting disabled if you want to review every statement first.
+If you learned the final address during your first deployment, update both files and run both commands again. Open the app URL and confirm the Artist Ledger login page loads.
 
-Inspect the latest job result in Settings. Each shop/month job runs once; failed or interrupted runs require review and manual completion. Hosting the code alone does not create a scheduler.
+### 5. Install in your own store
 
-## Local development
+In the Dev Dashboard, open your app's overview and click **Install app**. Select an eligible store in your organization and review Shopify's permissions before installing.
 
-Use a separate Shopify app registration and development store. Copy `.env.example` to `.env`, set a local PostgreSQL `DATABASE_URL`, and supply your development app credentials. Set the development Client ID in `shopify.app.toml`, keeping scopes and webhooks intact. Run `npm run setup`, then `shopify app dev`. Follow the CLI's development-store installation link. Use a separate checkout/configuration for production so development URLs cannot replace production settings.
+For distribution beyond your organization, use the [Partner Dashboard distribution workflow](https://shopify.dev/docs/apps/launch/distribution/select-distribution-method). Public distribution supports unrelated merchants and requires Shopify review. Custom distribution supports a store or stores in one Plus organization. Shopify makes this choice permanent. A public source repository does not grant App Store approval.
 
-For Docker Compose, set `POSTGRES_PASSWORD` in the local `.env` as well as the app variables, then run `docker compose up --build`. The included compose file keeps PostgreSQL on its internal network and exposes the app at port 3000. Use a URL-safe random database password. Local Docker still needs an HTTPS tunnel or proxy for Shopify access.
+### 6. Configure email
 
-## Troubleshooting
+This version sends through Resend. Configure a sender domain you control, verify its DNS records, then set:
 
-| Symptom | Check |
-| --- | --- |
-| App loads outside Admin or authentication repeats | Matching Client ID/secret, HTTPS app URL and callback URLs; reopen through Shopify Apps |
-| Server does not start | Database URL, service region/network, migration and startup logs |
-| Historical sync is blocked | Shopify approval, released optional scope, merchant permission |
-| Send button is blocked | Saved changes, valid artist email, assigned items, known costs, no negative balance or unallocated refunds |
-| Email is not received | Verified sender, API key, Resend delivery logs and recipient spam folder |
-| A previously sent month cannot be resent | Sent statements are immutable; reconcile outside the app if a correction is needed |
+```sh
+npx wrangler secret put RESEND_API_KEY
+npx wrangler secret put EMAIL_FROM
+```
 
-Back up the database and export required statements before uninstalling. Uninstall removes that store's app data and sessions. See the README for calculation rules and reporting limitations.
+Use a verified sender such as `Your Gallery <statements@your-domain.com>`. In Artist Ledger Settings, set the gallery reply-to email. Send a reviewed test statement to an address you control before enabling artist delivery. Provider plans and sending limits are separate from app licensing; no paid plan is required by the source code.
+
+### 7. Past months and automatic sending
+
+Choose the month and year, then click **Sync Shopify sales**. For orders older than Shopify's default 60-day window, request `read_all_orders` access approval, add it to `optional_scopes` in `shopify.app.toml`, release a new version, and grant historical access in Artist Ledger Settings.
+
+Automatic reports are disabled by default. The included Cloudflare Cron Trigger checks for work every minute. On the first day of each month after 12:00 UTC, opted-in stores receive a job for the previous month. Each tick advances one import step or sends one artist statement. Large runs take multiple ticks. Review failed or interrupted runs in Settings and complete eligible reports manually.
+
+## Free tier and capacity
+
+The deployment uses Workers and D1. Cloudflare's [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) and [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/) define the current free allowances. The free Workers plan has a CPU budget per invocation; breaking imports into steps reduces request work but does not guarantee every store fits. Monitor live usage and failures before enabling automatic reports. Upgrading a plan requires the operator's choice.
+
+This version stores each shop's workspace in one D1 row and caps it at 1.5 MB. Larger histories need a storage redesign. Imports stop before replacing the saved workspace when the supported size is exceeded. Shopify charges, domain registration, and email-provider usage remain separate.
+
+## Development and checks
+
+Use a separate Shopify app and development store. Copy `.dev.vars.example` to `.dev.vars`, supply development secrets, and configure development values in `wrangler.jsonc`. These local secret files are ignored by Git.
+
+```sh
+npm run setup
+npm test
+npm run typecheck
+npm run build
+npx wrangler deploy --dry-run
+npm run dev
+```
+
+For embedded development, expose Vite over HTTPS and use that address in your development Shopify registration. Never point the production registration at a temporary development tunnel.
+
+## Operation
+
+Keep secrets out of Git. Back up D1 before upgrades and test restoring records. Uninstalling deletes that shop's sessions, workspace, imports, reports, and monthly jobs; export statements first. Watch Worker errors and email-provider delivery logs. Provider acceptance does not prove inbox delivery.
+
+The optional `/jobs/monthly` endpoint advances one scheduler step and requires a `CRON_SECRET` Bearer token. The native Cloudflare Cron Trigger does not need that secret or an external scheduler.

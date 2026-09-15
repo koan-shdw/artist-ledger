@@ -2,6 +2,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { syncMonth, monthBounds } from "./.generated/sync.mjs";
 import { emptyLedger } from "../app/lib/ledger.ts";
+import {beginSync,advanceSync,finishSync} from "./.generated/steps.mjs";
+test("resumable sync survives serialization and matches the original sync",async()=>{
+ const original=emptyLedger(); original.products=[{id:"p1",title:"Override",sku:"",artistId:"a",unitCost:999,included:false}];
+ const expected=await syncMonth(mock().admin,original,month);
+ const m=mock(); let state=await beginSync(m.admin,original,month);
+ let ticks=0;
+ while(state.phase!=="complete"){
+  const before=m.seen.length;
+  state=await advanceSync(m.admin,JSON.parse(JSON.stringify(state)));
+  assert.ok(m.seen.length-before<=1,"At most one Shopify query per step");
+  if(++ticks>30)throw Error("Sync never finished");
+ }
+ const actual=finishSync(state);
+ actual.months[month].syncedAt=expected.months[month].syncedAt;
+ assert.deepEqual(actual,expected);
+ assert.equal(original.products[0].title,"Override");
+});
 const month = "2026-08";
 const money = (amount) => ({ shopMoney: { amount, currencyCode: "USD" } });
 const page = (nodes, more = false, cursor = null) => ({

@@ -6,16 +6,16 @@ An embedded Shopify app for galleries to prepare monthly artist statements and t
 
 - Opens inside Shopify Admin using Shopify App Bridge and the official React Router authentication template.
 - Per-artist gallery percentages, email addresses, and report recipient selection.
-- Product variant assignment, editable unit costs, global product inclusion, and item selection within a month’s statement.
+- Shopify vendor selection with automatic product assignment, editable unit costs, global product inclusion, and item selection within a month’s statement.
 - Shopify sales sync with pagination, store timezone boundaries, net amounts after discounts/refunds, and explicit tax/shipping exclusion.
 - Downloadable artist statements and CSV summaries.
 - Reviewed email sending through Resend; selected artists each receive only their own statement.
-- Optional monthly sending through a protected scheduler endpoint.
-- Separate PostgreSQL records for every installed store, optimistic edit checks, frozen statement snapshots, duplicate-send protection, and verified Shopify uninstall/privacy webhooks.
+- Optional monthly sending through Cloudflare Cron Triggers, processed in resumable steps.
+- Separate Cloudflare D1 records for every installed store, optimistic edit checks, frozen statement snapshots, duplicate-send protection, and verified Shopify uninstall/privacy webhooks.
 
 ## Current status
 
-The source package is built and locally tested. It has not been installed in a real store, deployed to an app host, connected to an email sender, or approved by Shopify. The separate Sites preview uses sample data and cannot send email or connect to stores.
+The Cloudflare version is deployed and installed in SHDW Gallery. A live sales import completed successfully. Email delivery and historical-order approval remain unconfigured in that deployment. The app has not completed Shopify App Store review. The separate Sites preview uses sample data.
 
 ## Installation
 
@@ -41,31 +41,29 @@ Supported currencies: USD, GBP, EUR, AUD, CAD, NZD, JPY. Each installed shop rep
 
 ## Production hosting
 
-Deploy the included Dockerfile on a Node-capable HTTPS host with a durable PostgreSQL database. The included `compose.yml` can run both services; set `POSTGRES_PASSWORD` and do not expose the database port. Terminate HTTPS at your host or reverse proxy.
+Deploy to Cloudflare Workers with a D1 database using the [installation guide](docs/INSTALLATION.md). Each independent deployment uses its own Shopify registration, database, and secrets. The repository's configuration identifies the SHDW deployment; replace those values before deploying your own copy.
 
 Configure these secrets on the host:
 
-- `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`
-- `DATABASE_URL`
-- `SCOPES=read_products,read_inventory,read_orders`
+- `SHOPIFY_API_SECRET`
 - `RESEND_API_KEY`, `EMAIL_FROM` using a verified sending domain
-- `CRON_SECRET`, a random value of at least 32 characters
+- Optional `CRON_SECRET` for the manual scheduler endpoint
 
-Set the app URL and callback URLs in `shopify.app.toml` to the real host. Run `shopify app deploy` to release Shopify configuration and webhooks. That command does not host the application server. Use PostgreSQL backups and HTTPS, keep database and secrets private, and configure monitoring on the app host.
+Set public `SHOPIFY_API_KEY`, `SHOPIFY_APP_URL`, and `SCOPES` values in `wrangler.jsonc`. Set the same app URL and callback URL in `shopify.app.toml`. Run `npm run deploy:cloudflare` to host the server and `npx @shopify/cli app deploy --allow-updates` to release Shopify configuration. Back up D1 and monitor Worker errors. Free-tier capacity is governed by Cloudflare's current allowances; this version caps each serialized workspace at 1.5 MB.
 
-App and Shopify staff access use the store’s app permissions. All gallery queries are scoped to the authenticated shop. The app does not request or store customer names, customer emails, or addresses. Session records are managed by Shopify’s official adapter. Uninstall removes the store’s app data and sessions; export needed statements before uninstalling. Verified privacy webhooks also support shop erasure.
+App and Shopify staff access use the store’s app permissions. All gallery queries are scoped to the authenticated shop. The app's GraphQL operations do not select customer names, customer emails, or addresses. Shopify sessions use a D1 storage adapter. Uninstall removes the store’s app data and sessions; export needed statements before uninstalling. Verified privacy webhooks also support shop erasure.
 
 ## Email and scheduler
 
 Set up Resend with a verified sender; no email is sent by this package during installation or tests. In Settings, set the gallery reply-to email. Manual sending requires saved changes, valid artist emails, known costs, included sales items, and no unresolved refund warnings or negative balances.
 
-Schedule an HTTPS POST to `/jobs/monthly` on the first day of each month at 12:00 UTC, using header `Authorization: Bearer YOUR_CRON_SECRET`. The job targets the previous UTC calendar month, using each store’s timezone to select the orders. Enable automatic reporting separately in each store’s Settings. Monthly jobs are claimed once per shop/month; repeated scheduler calls cannot duplicate the run. Failed or interrupted runs require operator attention, and the merchant can complete eligible reports with Review & send. The latest job result is visible in Settings. For large installations, replace the sequential job endpoint with a persistent queue and per-store jobs; request timeouts can interrupt a large run.
+The included Cloudflare Cron Trigger runs every minute. On the first day of the month after 12:00 UTC, it creates jobs for opted-in stores covering the previous month, using each store’s timezone to select orders. Each invocation advances one import step or sends one artist statement. Jobs persist in D1 and use leases to prevent concurrent processing. Enable automatic reporting separately in each store’s Settings. Failed runs require review; the merchant can complete eligible reports with Review & send. The latest job result is visible in Settings. The optional protected `/jobs/monthly` endpoint advances one step using `Authorization: Bearer YOUR_CRON_SECRET`.
 
 Each artist/month has one immutable report and a unique provider idempotency key. Sent reports are skipped. Uncertain email requests may be retried within 23 hours using the same snapshot and key; after that, inspect provider logs and reconcile delivery before any operator reset. A successful provider response means accepted for delivery, not proof of inbox arrival. Bounce/delivery webhook handling is not included.
 
 ## Sharing and installation on other stores
 
-For unrelated merchants, select **public distribution** in Shopify’s Dev Dashboard, complete the listing and requirements, and obtain Shopify app review approval. Custom distribution supports one store or stores within the same Plus organization. Do not choose custom distribution for a product intended for unrelated stores; the distribution choice cannot later be changed.
+For unrelated merchants, select **public distribution** through Shopify’s Partner Dashboard, complete the listing and requirements, and obtain Shopify app review approval. Custom distribution supports one store or stores within the same Plus organization. The distribution choice cannot later be changed. Anyone can host an independent copy from this repository with their own registration.
 
 The install link comes from the actual registered Shopify app after the required setup. The preview URL and this source ZIP are not Shopify install links.
 
@@ -75,7 +73,7 @@ The install link comes from the actual registered Shopify app after the required
 - `npm run typecheck`: React Router route generation and TypeScript checks.
 - `npm run build`: client and server production bundles.
 
-GitHub Actions verified the PostgreSQL migration on PostgreSQL 17, all 22 tests, TypeScript checks, the production build, and the Docker image build. Store OAuth installation, live Shopify sales sync, Resend delivery, Docker runtime startup, scheduler hosting, and App Store review still require verification after credentials and hosting are configured.
+The Cloudflare migration passes 26 automated tests, including real local D1 operations, session persistence, shop isolation, resumable imports, and monthly job claims. TypeScript and the production build pass. Live Shopify installation and sales import have been verified. Email delivery, historical access, and a full scheduled production run still need verification.
 
 ## Sources
 

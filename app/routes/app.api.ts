@@ -4,7 +4,7 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { type Ledger } from "../lib/ledger";
 import { getWorkspace, parseEdits, saveWorkspace } from "../lib/store.server";
-import { syncMonth } from "../lib/shopify-sync.server";
+import { continueSync } from "../lib/sync-job.server";
 import { sendReports } from "../lib/email.server";
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
@@ -40,7 +40,8 @@ export async function action({ request }: ActionFunctionArgs) {
           .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
           .optional(),
         data: z.unknown().optional(),
-        artistIds: z.array(z.string()).max(500).optional(),
+        artistIds: z.array(z.string()).max(1).optional(),
+        jobId: z.string().uuid().optional(),
       })
       .parse(await request.json());
     const row = await getWorkspace(session.shop);
@@ -57,13 +58,7 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     if (!body.month) throw Error("Select a month");
     if (body.action === "sync")
-      return Response.json({
-        version: await saveWorkspace(
-          session.shop,
-          row.version,
-          await syncMonth(admin, data, body.month),
-        ),
-      });
+      return Response.json(await continueSync(admin, session.shop, row.version, data, body.month, body.jobId));
     if (!body.artistIds) throw Error("Select artists");
     return Response.json(
       await sendReports(session.shop, data, body.month, body.artistIds),

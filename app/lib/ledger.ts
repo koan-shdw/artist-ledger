@@ -13,11 +13,13 @@ export const artistSchema = z.object({
     ),
   galleryBps: z.number().int().min(0).max(10000),
   enabled: z.boolean(),
+  vendor: z.string().max(255).optional(),
 });
 export const productSchema = z.object({
   id: z.string(),
   title: z.string().max(300),
   sku: z.string().max(150),
+  vendor: z.string().max(255).optional(),
   artistId: z.string(),
   unitCost: cents.nullable(),
   included: z.boolean(),
@@ -45,6 +47,30 @@ export const settingsSchema = z.object({
 });
 export type Artist = z.infer<typeof artistSchema>;
 export type Product = z.infer<typeof productSchema>;
+export function linkVendorProducts(
+  products: Product[],
+  artists: Artist[],
+): Product[] {
+  const vendors = new Map<string, string>();
+  for (const artist of artists) {
+    if (!artist.vendor) continue;
+    if (vendors.has(artist.vendor))
+      throw Error("Each Shopify vendor can be linked to only one artist.");
+    vendors.set(artist.vendor, artist.id);
+  }
+  return products.map((product) => {
+    const linked = product.vendor ? vendors.get(product.vendor) : undefined;
+    const previous = artists.find((artist) => artist.id === product.artistId);
+    return {
+      ...product,
+      artistId:
+        linked ??
+        (previous?.vendor && product.vendor !== undefined
+          ? ""
+          : product.artistId),
+    };
+  });
+}
 export type SaleLine = z.infer<typeof lineSchema>;
 export type Settings = z.infer<typeof settingsSchema>;
 export type Ledger = {
@@ -186,8 +212,8 @@ export function monthLabel(month: string) {
     timeZone: "UTC",
   });
 }
-export function previousMonth() {
-  const d = new Date();
+export function previousMonth(now = new Date()) {
+  const d = new Date(now);
   d.setUTCDate(1);
   d.setUTCMonth(d.getUTCMonth() - 1);
   return d.toISOString().slice(0, 7);

@@ -1,16 +1,3 @@
-import { PrismaClient } from "@prisma/client";
-
-declare global {
-  // eslint-disable-next-line no-var
-  var prismaGlobal: PrismaClient;
-}
-
-if (process.env.NODE_ENV !== "production") {
-  if (!global.prismaGlobal) {
-    global.prismaGlobal = new PrismaClient();
-  }
-}
-
-const prisma = global.prismaGlobal ?? new PrismaClient();
-
-export default prisma;
+import { env } from "cloudflare:workers";
+import { createDatabase } from "./lib/d1.server";
+export default createDatabase(() => (env as unknown as { DB: D1Database }).DB);

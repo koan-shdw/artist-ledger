@@ -88,7 +88,7 @@ export async function sendReports(
         }),
         signal: AbortSignal.timeout(20000),
       });
-      const result = await response.json();
+      const result = await response.json() as { id?: string };
       if (!response.ok || !result.id)
         throw Error(`Email provider returned ${response.status}`);
       await db.artistReport.update({

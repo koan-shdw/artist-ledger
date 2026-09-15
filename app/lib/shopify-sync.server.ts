@@ -1,3 +1,4 @@
+import { linkVendorProducts } from "./ledger";
 import { type Ledger, type Product, type SaleLine, minorUnits } from "./ledger";
 import { QUERIES } from "./queries";
 type Admin = {
@@ -12,7 +13,10 @@ export async function graphql(
   variables: Record<string, unknown> = {},
 ) {
   const response = await admin.graphql(query, { variables });
-  const body = await response.json();
+  const body = (await response.json()) as {
+    errors?: { message: string }[];
+    data: any;
+  };
   if (!response.ok || body.errors)
     throw Error(
       "Shopify could not complete the sync. Check app permissions and retry. " +
@@ -98,6 +102,7 @@ export async function syncMonth(
           v.product.title +
           (v.title === "Default Title" ? "" : " · " + v.title),
         sku: v.sku ?? "",
+        vendor: v.product.vendor ?? "",
       };
       if (existing) Object.assign(existing, fields);
       else

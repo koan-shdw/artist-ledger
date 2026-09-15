@@ -65,6 +65,7 @@ import {
   reportText,
   reportsCsv,
   minorUnits,
+  linkVendorProducts,
 } from "@/lib/ledger";
 const nav = [
   { label: "Monthly reports", icon: FileText },
@@ -151,18 +152,58 @@ export default function LedgerApp({
     setBusy(true);
     setError("");
     try {
-      const r = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, version, ...payload }),
-      });
-      const result = (await r.json()) as {
-        error?: string;
-        version: number;
-        message: string;
-      };
-      if (!r.ok) throw Error(result.error || "Request failed");
-      return result;
+      let continuation: string | undefined;
+      const recipients =
+        action === "send" ? [...(payload.artistIds as string[])] : [];
+      let recipientIndex = 0;
+      const messages: string[] = [];
+      while (true) {
+        const r = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            version,
+            ...payload,
+            ...(action === "send"
+              ? {
+                  artistIds: recipients.slice(
+                    recipientIndex,
+                    recipientIndex + 1,
+                  ),
+                }
+              : {}),
+            ...(continuation ? { jobId: continuation } : {}),
+          }),
+        });
+        const result = (await r.json()) as {
+          error?: string;
+          version: number;
+          message: string;
+          pending?: boolean;
+          jobId?: string;
+        };
+        if (!r.ok) throw Error(result.error || "Request failed");
+        if (result.pending && result.jobId) {
+          continuation = result.jobId;
+          setNotice(result.message);
+          continue;
+        }
+        if (action === "send") {
+          messages.push(result.message);
+          recipientIndex++;
+          setNotice(
+            "Processed " +
+              recipientIndex +
+              " of " +
+              recipients.length +
+              " artist reports",
+          );
+          if (recipientIndex < recipients.length) continue;
+          result.message = messages.join(" ");
+        }
+        return result;
+      }
     } finally {
       setBusy(false);
     }
@@ -667,7 +708,7 @@ export default function LedgerApp({
                     <p>
                       {reports.length
                         ? "Change the search or filter to see more artists."
-                        : "Add an artist, sync your Shopify sales, and assign their products."}
+                        : "Sync Shopify sales, then select your artists from the Shopify vendor list."}
                     </p>
                     <Button
                       variant="outline"
@@ -1160,6 +1201,56 @@ export default function LedgerApp({
                 setEditing(null);
               }}
             >
+              <Label htmlFor="artist-vendor">Shopify vendor / supplier</Label>
+              <Select
+                value={editing.vendor || "__manual__"}
+                onValueChange={(vendor) =>
+                  setEditing({
+                    ...editing,
+                    vendor: vendor === "__manual__" ? undefined : vendor,
+                    name:
+                      vendor === "__manual__"
+                        ? editing.name
+                        : vendor.slice(0, 120),
+                  })
+                }
+              >
+                <SelectTrigger id="artist-vendor">
+                  <SelectValue placeholder="Select a Shopify vendor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__manual__">
+                    Select a vendor or enter manually
+                  </SelectItem>
+                  {[
+                    ...new Set([
+                      ...data.products
+                        .map((p) => p.vendor)
+                        .filter((v): v is string => !!v),
+                      ...(editing.vendor ? [editing.vendor] : []),
+                    ]),
+                  ]
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((vendor) => (
+                      <SelectItem
+                        key={vendor}
+                        value={vendor}
+                        disabled={data.artists.some(
+                          (a) => a.id !== editing.id && a.vendor === vendor,
+                        )}
+                      >
+                        {vendor}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p>
+                {editing.vendor
+                  ? data.products.filter((p) => p.vendor === editing.vendor)
+                      .length +
+                    " product variants linked automatically. Future products from this vendor link when you sync."
+                  : "Choose from your Shopify product vendors. Sync Shopify sales to refresh this list."}
+              </p>
               <Label htmlFor="artist-name">Artist name</Label>
               <Input
                 id="artist-name"
