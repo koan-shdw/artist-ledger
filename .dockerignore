@@ -1,0 +1,10 @@
+.cache
+build
+node_modules
+
+work
+outputs
+.git
+tests/.generated
+.env
+.env.*

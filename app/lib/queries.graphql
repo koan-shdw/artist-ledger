@@ -1,0 +1,27 @@
+query LedgerProducts($after: String) {
+  productVariants(first: 100, after: $after) {
+    nodes { id title sku product { title } inventoryItem { unitCost { amount currencyCode } } }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+query LedgerOrders($after: String, $query: String!) {
+  shop { currencyCode ianaTimezone name }
+  orders(first: 50, after: $after, query: $query, sortKey: CREATED_AT) {
+    nodes {
+      id name test displayFinancialStatus cancelledAt
+      lineItems(first: 100) {
+        nodes { id name currentQuantity variant { id } priceAfterAllDiscountsBeforeTaxesSet { shopMoney { amount currencyCode } } }
+        pageInfo { hasNextPage endCursor }
+      }
+      refunds { id refundLineItems(first: 1) { nodes { id } } }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+query LedgerOrderLines($id: ID!, $after: String) {
+  order(id: $id) { lineItems(first: 100, after: $after) {
+    nodes { id name currentQuantity variant { id } priceAfterAllDiscountsBeforeTaxesSet { shopMoney { amount currencyCode } } }
+    pageInfo { hasNextPage endCursor }
+  } }
+}
+query LedgerShop { shop { currencyCode ianaTimezone name } currentAppInstallation { accessScopes { handle } } }
