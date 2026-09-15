@@ -209,6 +209,7 @@ export function finishSync(s: SyncState): Ledger {
       ...s.data.months,
       [s.month]: {
         lines: s.lines,
+        adjustments: s.data.months[s.month]?.adjustments,
         excluded: (s.data.months[s.month]?.excluded ?? []).filter((id) =>
           lineIds.has(id),
         ),

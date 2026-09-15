@@ -33,6 +33,13 @@ export const lineSchema = z.object({
   net: cents,
   order: z.string(),
 });
+export const adjustmentSchema = z.object({
+  net: cents.optional(),
+  cost: cents.optional(),
+  galleryBps: z.number().int().min(0).max(10000).optional(),
+  note: z.string().max(1000).optional(),
+});
+export type SaleAdjustment = z.infer<typeof adjustmentSchema>;
 export const settingsSchema = z.object({
   galleryName: z.string().trim().min(1).max(150),
   currency: z.enum(["USD", "GBP", "EUR", "AUD", "CAD", "NZD", "JPY"]),
@@ -109,6 +116,7 @@ export type Ledger = {
       excluded: string[];
       syncedAt: string;
       warnings: string[];
+      adjustments?: Record<string, SaleAdjustment>;
     }
   >;
   settings: Settings;
@@ -116,7 +124,14 @@ export type Ledger = {
 export type Report = {
   artist: Artist;
   month: string;
-  lines: (SaleLine & { cost: number })[];
+  lines: (SaleLine & {
+    cost: number;
+    galleryBps?: number;
+    originalNet?: number;
+    originalCost?: number;
+    note?: string;
+    adjusted?: boolean;
+  })[];
   net: number;
   cost: number;
   gallery: number;
@@ -147,6 +162,7 @@ export const ledgerSchema = z.object({
       excluded: z.array(z.string()),
       syncedAt: z.string(),
       warnings: z.array(z.string()),
+      adjustments: z.record(adjustmentSchema).optional(),
     }),
   ),
   settings: settingsSchema,
@@ -174,8 +190,6 @@ export function reportFor(
   if (!artist) throw Error("Artist not found");
   const period = data.months[month];
   const errors: string[] = [];
-  if (artist.agreementConfigured === false)
-    errors.push("Set the gallery percentage for this artist");
   const lines = (period?.lines ?? [])
     .filter((l) => {
       const p = data.products.find((p) => p.id === l.productId);
@@ -187,29 +201,70 @@ export function reportFor(
     })
     .map((l) => {
       const p = data.products.find((p) => p.id === l.productId)!;
-      if (p.unitCost === null) errors.push(`Set product cost for ${p.title}`);
-      return { ...l, cost: (p.unitCost ?? 0) * l.quantity };
+      const edit = period?.adjustments?.[l.id];
+      if (p.unitCost === null && edit?.cost === undefined)
+        errors.push(`Set product cost for ${p.title}`);
+      if (
+        artist.agreementConfigured === false &&
+        edit?.galleryBps === undefined
+      )
+        errors.push("Set the gallery percentage for this artist");
+      return {
+        ...l,
+        net: edit?.net ?? l.net,
+        cost: edit?.cost ?? (p.unitCost ?? 0) * l.quantity,
+        galleryBps: edit?.galleryBps ?? artist.galleryBps,
+        originalNet: l.net,
+        originalCost: (p.unitCost ?? 0) * l.quantity,
+        note: edit?.note,
+        adjusted:
+          !!edit &&
+          (edit.net !== undefined ||
+            edit.cost !== undefined ||
+            edit.galleryBps !== undefined ||
+            !!edit.note),
+      };
     });
   const net = lines.reduce((n, l) => n + l.net, 0),
     cost = lines.reduce((n, l) => n + l.cost, 0);
-  const base =
-    data.settings.basis === "after_costs" ? Math.max(0, net - cost) : net;
   if (
     !Number.isSafeInteger(net) ||
     !Number.isSafeInteger(cost) ||
     lines.some((l) => !Number.isSafeInteger(l.cost))
   )
     throw Error("Amount exceeds the supported range");
-  const gallery = Number(
-    (BigInt(base) * BigInt(artist.galleryBps) + BigInt(5000)) / BigInt(10000),
-  );
+  const groups = new Map<number, { net: number; cost: number }>();
+  for (const line of lines) {
+    const rate = line.galleryBps;
+    const group = groups.get(rate) ?? { net: 0, cost: 0 };
+    group.net += line.net;
+    group.cost += line.cost;
+    groups.set(rate, group);
+  }
+  const gallery = [...groups].reduce((sum, [rate, group]) => {
+    const base =
+      data.settings.basis === "after_costs"
+        ? Math.max(0, group.net - group.cost)
+        : group.net;
+    return sum + Number((BigInt(base) * BigInt(rate) + 5000n) / 10000n);
+  }, 0);
   const payout = net - cost - gallery;
   if (!artist.email) errors.push("Add an artist email address");
   if (!period) errors.push("Sync sales for this month");
   if (period?.warnings.length) errors.push(...period.warnings);
   if (!lines.length) errors.push("No included sales items");
   return {
-    artist: { ...artist },
+    artist: {
+      ...artist,
+      agreementConfigured:
+        artist.agreementConfigured === false &&
+        lines.length > 0 &&
+        lines.every(
+          (l) => period?.adjustments?.[l.id]?.galleryBps !== undefined,
+        )
+          ? true
+          : artist.agreementConfigured,
+    },
     month,
     lines,
     net,
@@ -323,7 +378,14 @@ export function demoLedger(): Ledger {
   return d;
 }
 export function reportText(r: Report) {
-  return `${r.galleryName}\nArtist sales statement — ${monthLabel(r.month)}\n${r.artist.name}\n\n${r.lines.map((l) => `${l.title} | ${l.quantity} units | sales ${money(l.net, r.currency)} | costs ${money(l.cost, r.currency)}`).join("\n")}\n\nNet product sales: ${money(r.net, r.currency)}\nProduct costs: ${money(r.cost, r.currency)}\nGallery share (${r.artist.galleryBps / 100}%, ${r.basis === "after_costs" ? "after product costs" : "of net sales"}): ${money(r.gallery, r.currency)}\nArtist balance: ${money(r.payout, r.currency)}\n\n${r.payout >= 0 ? `Please invoice ${r.galleryName} for ${money(r.invoice, r.currency)}.` : `No invoice is due. Negative balance ${money(r.payout, r.currency)} requires gallery review; it has not been carried forward.`}\n\nIncludes selected products from orders placed in ${monthLabel(r.month)}, net of refunds and removed quantities at sync. Tax and shipping excluded. Costs apply to remaining units.\n`;
+  const adjustments = r.lines
+    .filter((l) => l.adjusted)
+    .map(
+      (l) =>
+        `${l.order} | ${l.title} | gallery ${(l.galleryBps ?? r.artist.galleryBps) / 100}% | original sale ${money(l.originalNet ?? l.net, r.currency)} | original cost ${money(l.originalCost ?? l.cost, r.currency)}${l.note ? " | Note: " + l.note : ""}`,
+    )
+    .join("\n");
+  return `${adjustments ? "Sale adjustments\n" + adjustments + "\n\n" : ""}${r.galleryName}\nArtist sales statement — ${monthLabel(r.month)}\n${r.artist.name}\n\n${r.lines.map((l) => `${l.title} | ${l.quantity} units | sales ${money(l.net, r.currency)} | costs ${money(l.cost, r.currency)}`).join("\n")}\n\nNet product sales: ${money(r.net, r.currency)}\nProduct costs: ${money(r.cost, r.currency)}\nGallery share (${r.lines.some((l) => l.galleryBps !== undefined && l.galleryBps !== r.artist.galleryBps) ? "sale-specific rates" : r.artist.galleryBps / 100 + "%"}, ${r.basis === "after_costs" ? "after product costs" : "of net sales"}): ${money(r.gallery, r.currency)}\nArtist balance: ${money(r.payout, r.currency)}\n\n${r.payout >= 0 ? `Please invoice ${r.galleryName} for ${money(r.invoice, r.currency)}.` : `No invoice is due. Negative balance ${money(r.payout, r.currency)} requires gallery review; it has not been carried forward.`}\n\nIncludes selected products from orders placed in ${monthLabel(r.month)}, net of refunds and removed quantities at sync. Tax and shipping excluded. Costs apply to remaining units.\n`;
 }
 export function csvCell(value: unknown) {
   let s = String(value ?? "");

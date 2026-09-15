@@ -159,6 +159,16 @@ export async function statementPdf(
         });
       }
     }
+    for (const line of current.lines.filter((l) => l.adjusted)) {
+      paragraph(
+        `Adjustment - ${line.order}: ${line.title}. Sale ${money(line.originalNet ?? line.net, current.currency)} to ${money(line.net, current.currency)}; cost ${money(line.originalCost ?? line.cost, current.currency)} to ${money(line.cost, current.currency)}; gallery ${(line.galleryBps ?? current.artist.galleryBps) ? (line.galleryBps ?? current.artist.galleryBps) / 100 : 0}%.${line.note ? " Note: " + line.note : ""}`,
+      );
+    }
+    const varyingRates = current.lines.some(
+      (l) =>
+        l.galleryBps !== undefined &&
+        l.galleryBps !== current.artist.galleryBps,
+    );
     ensure(155);
     y -= 8;
     const summary = (label: string, value: string, size = 11) => {
@@ -171,7 +181,9 @@ export async function statementPdf(
     summary(
       current.artist.agreementConfigured === false
         ? "Gallery share"
-        : `Gallery share (${current.artist.galleryBps / 100}%)`,
+        : varyingRates
+          ? "Gallery share (sale-specific rates)"
+          : `Gallery share (${current.artist.galleryBps / 100}%)`,
       current.artist.agreementConfigured === false
         ? "Not set"
         : money(current.gallery, current.currency),

@@ -104,3 +104,11 @@ Historical reports reflect the chosen order month net of refunds as of the sync 
 Open an artist statement and choose **Download PDF**, or select artists and choose **Export PDF** for a combined document with each artist starting on a new page. Save edits before exporting. PDFs group included sales by product variant and show quantities, net sales, product costs, gallery share, and invoice amount. Incomplete agreements and unresolved reporting issues produce a clearly marked draft. Previously saved report snapshots retain their original figures.
 
 PDFs are generated in the browser. The bundled Noto Sans JP font supports Japanese artist and product names and is licensed under the SIL Open Font License in `public/fonts/LICENSE.txt`. Email delivery currently sends the itemised statement in the message body and requires a configured verified sender.
+
+## Monthly sales adjustments
+
+Open **Review all sales** from Monthly reports, or **Monthly sales** from the menu. Select a month to see its imported sales across every artist. Edit a sale's total net amount, total product cost, gallery percentage, and adjustment note. Blank fields use Shopify's amount or the default cost/agreement. Zero is a valid override. Reset restores the defaults for that sale. Save changes before exporting or sending.
+
+Adjustments are stored by month and Shopify sales-line ID, separately from the imported amounts, and survive re-syncs. Shopify data and default artist agreements are unchanged. Reports and PDFs use adjusted totals and include adjustment details. Percentage calculations are rounded once for each rate group within the artist's statement; cost-first agreements use the non-negative margin within that group. Review overrides after re-syncing refunds or changed orders.
+
+Monthly adjustments and item inclusion are locked once the artist/month has a frozen delivery snapshot. Sent reports keep their original values. Issuing replacement statements is not implemented.

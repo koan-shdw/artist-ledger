@@ -95,6 +95,11 @@ export function parseEdits(incoming: unknown, current: Ledger): Ledger {
         key,
         {
           ...m,
+          adjustments: Object.fromEntries(
+            Object.entries(
+              value.months[key]?.adjustments ?? m.adjustments ?? {},
+            ).filter(([id]) => m.lines.some((l) => l.id === id)),
+          ),
           excluded: (value.months[key]?.excluded ?? m.excluded).filter((id) =>
             m.lines.some((l) => l.id === id),
           ),

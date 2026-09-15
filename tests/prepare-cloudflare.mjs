@@ -82,3 +82,25 @@ await build({
   format: "esm",
   packages: "external",
 });
+await build({
+  entryPoints: ["app/lib/store.server.ts"],
+  outfile: "tests/.generated/store.mjs",
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  packages: "external",
+  plugins: [
+    {
+      name: "store-test-env",
+      setup(b) {
+        b.onResolve({ filter: /^cloudflare:workers$/ }, () => ({
+          path: "env",
+          namespace: "mock",
+        }));
+        b.onLoad({ filter: /.*/, namespace: "mock" }, () => ({
+          contents: "export const env=globalThis.__testEnv;",
+        }));
+      },
+    },
+  ],
+});

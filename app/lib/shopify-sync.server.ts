@@ -207,6 +207,7 @@ export async function syncMonth(
       ...data.months,
       [month]: {
         lines,
+        adjustments: data.months[month]?.adjustments,
         excluded: (data.months[month]?.excluded ?? []).filter((id) =>
           lines.some((l) => l.id === id),
         ),

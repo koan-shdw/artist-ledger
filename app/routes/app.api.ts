@@ -48,17 +48,55 @@ export async function action({ request }: ActionFunctionArgs) {
     if (body.version !== row.version)
       throw Error("The workspace changed. Reload before continuing.");
     const data = JSON.parse(row.payload) as Ledger;
-    if (body.action === "save")
-      return Response.json({
-        version: await saveWorkspace(
-          session.shop,
-          body.version,
-          parseEdits(body.data, data),
-        ),
+    if (body.action === "save") {
+      const next = parseEdits(body.data, data);
+      const frozen = await db.artistReport.findMany({
+        where: { shop: session.shop },
+        orderBy: { createdAt: "desc" },
+        take: 5000,
       });
+      for (const report of frozen) {
+        const snapshot = JSON.parse(
+          report.snapshot,
+        ) as import("../lib/ledger").Report;
+        const before = data.months[report.month],
+          after = next.months[report.month];
+        for (const line of before?.lines ?? []) {
+          const artistId = data.products.find(
+            (p) => p.id === line.productId,
+          )?.artistId;
+          if (
+            artistId !== report.artistId &&
+            !snapshot.lines.some((l) => l.id === line.id)
+          )
+            continue;
+          if (
+            JSON.stringify(before?.adjustments?.[line.id]) !==
+              JSON.stringify(after?.adjustments?.[line.id]) ||
+            before?.excluded.includes(line.id) !==
+              after?.excluded.includes(line.id)
+          )
+            throw Error(
+              "This artist's statement is already saved for delivery. Its sales adjustments are locked.",
+            );
+        }
+      }
+      return Response.json({
+        version: await saveWorkspace(session.shop, body.version, next),
+      });
+    }
     if (!body.month) throw Error("Select a month");
     if (body.action === "sync")
-      return Response.json(await continueSync(admin, session.shop, row.version, data, body.month, body.jobId));
+      return Response.json(
+        await continueSync(
+          admin,
+          session.shop,
+          row.version,
+          data,
+          body.month,
+          body.jobId,
+        ),
+      );
     if (!body.artistIds) throw Error("Select artists");
     return Response.json(
       await sendReports(session.shop, data, body.month, body.artistIds),

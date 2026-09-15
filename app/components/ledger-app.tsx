@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import MonthlySales from "./monthly-sales";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,6 +70,7 @@ import {
   linkVendorProducts,
 } from "@/lib/ledger";
 const nav = [
+  { label: "Monthly sales", icon: FileText },
   { label: "Monthly reports", icon: FileText },
   { label: "Artists", icon: Users },
   { label: "Products & costs", icon: Package },
@@ -414,15 +416,17 @@ export default function LedgerApp({
               <p>
                 {page === "Monthly reports"
                   ? "A clear picture of what your artists have earned."
-                  : page === "Artists"
-                    ? "Manage each artist’s email, gallery split, and report selection."
-                    : page === "Products & costs"
-                      ? "Assign items to artists and set the costs deducted from sales."
-                      : "Choose how your gallery prepares and sends artist statements."}
+                  : page === "Monthly sales"
+                    ? "Review every sale and adjust its amount, cost, gallery percentage, or note."
+                    : page === "Artists"
+                      ? "Manage each artist’s email, gallery split, and report selection."
+                      : page === "Products & costs"
+                        ? "Assign items to artists and set the costs deducted from sales."
+                        : "Choose how your gallery prepares and sends artist statements."}
               </p>
             </div>
             <div className="actions">
-              {page === "Monthly reports" && (
+              {(page === "Monthly reports" || page === "Monthly sales") && (
                 <div className="month-control">
                   <Label htmlFor="report-month">Report month</Label>
                   <div className="month-selectors">
@@ -522,6 +526,28 @@ export default function LedgerApp({
               </Button>
             </div>
           )}
+          {page === "Monthly sales" && (
+            <>
+              <div className="actions">
+                <Button disabled={busy || dirty} onClick={sync}>
+                  Sync Shopify sales
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setPage("Monthly reports")}
+                >
+                  Review artist reports
+                </Button>
+              </div>
+              <MonthlySales
+                data={data}
+                month={month}
+                sent={sent}
+                busy={busy}
+                onChange={change}
+              />
+            </>
+          )}
           {page === "Monthly reports" && (
             <>
               <div className="stats">
@@ -565,6 +591,12 @@ export default function LedgerApp({
                   </p>
                 </div>
                 <div className="actions">
+                  <Button
+                    variant="outline"
+                    onClick={() => setPage("Monthly sales")}
+                  >
+                    Review all sales
+                  </Button>
                   <Button
                     variant="outline"
                     disabled={busy || dirty || !selected.length}
@@ -1394,7 +1426,16 @@ export default function LedgerApp({
                   <b>− {money(viewed.cost, viewed.currency)}</b>
                 </div>
                 <div>
-                  <span>Gallery share · {viewed.artist.galleryBps / 100}%</span>
+                  <span>
+                    Gallery share ·{" "}
+                    {viewed.lines.some(
+                      (l) =>
+                        l.galleryBps !== undefined &&
+                        l.galleryBps !== viewed.artist.galleryBps,
+                    )
+                      ? "sale-specific rates"
+                      : `${viewed.artist.galleryBps / 100}%`}
+                  </span>
                   <b>− {money(viewed.gallery, viewed.currency)}</b>
                 </div>
                 <div className="total">
@@ -1417,6 +1458,7 @@ export default function LedgerApp({
                   )
               ).map((l) => {
                 const p = data.products.find((p) => p.id === l.productId);
+                const effective = viewed.lines.find((row) => row.id === l.id);
                 return (
                   <label className="item-choice" key={l.id}>
                     <Checkbox
@@ -1451,7 +1493,17 @@ export default function LedgerApp({
                           : ""}
                       </span>
                     </div>
-                    <b>{money(l.net, viewed.currency)}</b>
+                    <b>
+                      {money(effective?.net ?? l.net, viewed.currency)}
+                      {effective?.adjusted && (
+                        <small style={{ display: "block" }}>
+                          Adjusted · gallery{" "}
+                          {(effective.galleryBps ?? viewed.artist.galleryBps) /
+                            100}
+                          %{effective.note ? ` · ${effective.note}` : ""}
+                        </small>
+                      )}
+                    </b>
                   </label>
                 );
               })}
