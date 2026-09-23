@@ -106,6 +106,8 @@ export default function LedgerApp({
     [status, setStatus] = useState("all"),
     [detail, setDetail] = useState<string | null>(null),
     [editing, setEditing] = useState<Artist | null>(null),
+    [artistSaving, setArtistSaving] = useState(false),
+    [artistError, setArtistError] = useState(""),
     [sendOpen, setSendOpen] = useState(false),
     [sendTargets, setSendTargets] = useState<string[] | null>(null),
     [setupOpen, setSetupOpen] = useState(false),
@@ -1436,7 +1438,15 @@ export default function LedgerApp({
           )}
         </div>
       </section>
-      <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
+      <Dialog
+        open={!!editing}
+        onOpenChange={(v) => {
+          if (!v && !artistSaving) {
+            setEditing(null);
+            setArtistError("");
+          }
+        }}
+      >
         <DialogContent>
           <DialogTitle>
             {data.artists.some((a) => a.id === editing?.id)
@@ -1450,22 +1460,32 @@ export default function LedgerApp({
           {editing && (
             <form
               className="form-grid"
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
-                const artist = { ...editing, agreementConfigured: true };
-                const artists = data.artists.some((a) => a.id === artist.id)
-                  ? data.artists.map((a) => (a.id === artist.id ? artist : a))
-                  : [...data.artists, artist];
-                change({
-                  ...data,
-                  artists,
-                  products: linkVendorProducts(data.products, artists),
-                });
-                setEditing(null);
+                if (busy || artistSaving) return;
+                setArtistSaving(true);
+                setArtistError("");
+                try {
+                  const artist = { ...editing, agreementConfigured: true };
+                  const artists = data.artists.some((a) => a.id === artist.id)
+                    ? data.artists.map((a) => (a.id === artist.id ? artist : a))
+                    : [...data.artists, artist];
+                  await persist({
+                    ...data,
+                    artists,
+                    products: linkVendorProducts(data.products, artists),
+                  });
+                  setEditing(null);
+                } catch (error) {
+                  setArtistError((error as Error).message);
+                } finally {
+                  setArtistSaving(false);
+                }
               }}
             >
               <Label htmlFor="artist-vendor">Shopify vendor / supplier</Label>
               <Select
+                disabled={busy || artistSaving}
                 value={editing.vendor || "__manual__"}
                 onValueChange={(vendor) =>
                   setEditing({
@@ -1517,6 +1537,7 @@ export default function LedgerApp({
               <Label htmlFor="artist-name">Artist name</Label>
               <Input
                 id="artist-name"
+                disabled={busy || artistSaving}
                 required
                 maxLength={120}
                 value={editing.name}
@@ -1527,6 +1548,7 @@ export default function LedgerApp({
               <Label htmlFor="artist-email">Email address</Label>
               <Input
                 id="artist-email"
+                disabled={busy || artistSaving}
                 type="email"
                 required
                 value={editing.email}
@@ -1537,6 +1559,7 @@ export default function LedgerApp({
               <Label htmlFor="artist-split">Gallery share (%)</Label>
               <Input
                 id="artist-split"
+                disabled={busy || artistSaving}
                 type="number"
                 min="0"
                 max="100"
@@ -1569,13 +1592,21 @@ export default function LedgerApp({
                 </Label>
                 <Switch
                   id="artist-enabled"
+                  disabled={busy || artistSaving}
                   checked={editing.enabled}
                   onCheckedChange={(v) =>
                     setEditing({ ...editing, enabled: v })
                   }
                 />
               </div>
-              <Button type="submit">Apply artist details</Button>
+              {artistError && (
+                <div role="alert" className="message error">
+                  {artistError}
+                </div>
+              )}
+              <Button type="submit" disabled={busy || artistSaving || !loaded}>
+                {artistSaving ? "Saving…" : "Save artist details"}
+              </Button>
             </form>
           )}
         </DialogContent>
