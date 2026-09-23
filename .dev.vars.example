@@ -1,4 +1,8 @@
 SHOPIFY_API_SECRET=
+# Built-in Gmail connection. See docs/gmail-setup.md.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GMAIL_TOKEN_KEY=
 RESEND_API_KEY=
 EMAIL_FROM=Your Gallery <statements@your-verified-domain.com>
 # Optional: enables the protected manual scheduler endpoint.

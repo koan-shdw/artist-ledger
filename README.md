@@ -2,6 +2,10 @@
 
 An embedded Shopify app for galleries to prepare monthly artist statements and tell each artist what to invoice.
 
+**[Download the latest release](https://github.com/koan-shdw/artist-ledger/releases/latest)** · **[Installation guide](docs/INSTALLATION.md)** · **[Gmail setup](docs/gmail-setup.md)**
+
+Free, MIT-licensed source for hosting your own copy on Cloudflare and installing it in Shopify. The download contains source code and setup instructions. A public one-click Shopify App Store installation is not yet available.
+
 ## Included
 
 - Opens inside Shopify Admin using Shopify App Bridge and the official React Router authentication template.

@@ -14,7 +14,7 @@ These steps are for the person hosting an independent copy. Each copy needs its 
 
 ### 1. Get the source
 
-Fork this repository, clone your fork, and install Node.js 22.13 or later. Run:
+Download and extract the source ZIP from the [latest release](https://github.com/koan-shdw/artist-ledger/releases/latest), or fork and clone this repository. Install Node.js 22.13 or later, open a terminal in the extracted project folder, and run:
 
 ```sh
 npm ci
