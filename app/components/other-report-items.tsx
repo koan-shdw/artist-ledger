@@ -51,9 +51,7 @@ export default function OtherReportItems({
       <div className="report-heading">
         <div>
           <h2>Other report items</h2>
-          <p>
-            Deduct artist purchases or add earnings from sales outside Shopify.
-          </p>
+          <p>Add artist purchases, outside sales or a Split cost.</p>
         </div>
         {!saved && (
           <Button
@@ -86,6 +84,17 @@ export default function OtherReportItems({
                       <small>
                         Cost/unit {money(line.unitCost, report.currency)} ·
                         Artist {line.artistBps / 100}% of profit
+                      </small>
+                    ) : line.kind === "split_cost" ? (
+                      <small>
+                        Split cost · Artist {line.artistBps / 100}%:{" "}
+                        {money(-otherLineAmount(line), report.currency)} ·
+                        Gallery {(10000 - line.artistBps) / 100}%:{" "}
+                        {money(
+                          line.quantity * line.unitAmount +
+                            otherLineAmount(line),
+                          report.currency,
+                        )}
                       </small>
                     ) : (
                       <small>
@@ -142,7 +151,7 @@ export default function OtherReportItems({
                     ? Math.round(Number(form.get("unitCost")) * unit)
                     : 0,
                 artistBps:
-                  kind === "sale"
+                  kind === "sale" || kind === "split_cost"
                     ? Math.round(Number(form.get("artistPercent")) * 100)
                     : 10000,
               });
@@ -181,6 +190,7 @@ export default function OtherReportItems({
               <option value="deduction">Deduct from artist</option>
               <option value="credit">Add to artist</option>
               <option value="sale">Additional sale · profit split</option>
+              <option value="split_cost">Split cost</option>
             </select>
           </label>
           <label>
@@ -208,22 +218,26 @@ export default function OtherReportItems({
               disabled={busy}
             />
           </label>
-          {kind === "sale" && (
+          {(kind === "sale" || kind === "split_cost") && (
             <>
+              {kind === "sale" && (
+                <label>
+                  Cost / unit
+                  <Input
+                    name="unitCost"
+                    type="number"
+                    min="0"
+                    required
+                    step={1 / unit}
+                    defaultValue={editing.unitCost / unit}
+                    disabled={busy}
+                  />
+                </label>
+              )}
               <label>
-                Cost / unit
-                <Input
-                  name="unitCost"
-                  type="number"
-                  min="0"
-                  required
-                  step={1 / unit}
-                  defaultValue={editing.unitCost / unit}
-                  disabled={busy}
-                />
-              </label>
-              <label>
-                Artist % of profit
+                {kind === "split_cost"
+                  ? "Artist % of cost"
+                  : "Artist % of profit"}
                 <Input
                   name="artistPercent"
                   type="number"

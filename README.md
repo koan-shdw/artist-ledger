@@ -135,3 +135,5 @@ Click an email or percentage in the artist table, or Set percentage in Monthly r
 At the end of an artist’s monthly statement, choose **Add item**. Enter a description, quantity and unit amount. Choose **Deduct from artist** for purchases paid by the gallery, **Add to artist** for a credit, or **Additional sale · profit split** for sales outside Shopify. Additional sales also take a unit cost and artist percentage of profit. Apply each item, then Save the report.
 
 Deductions reduce the balance; credits and the artist’s share of additional sales increase it. These items are saved for that artist and month, survive Shopify re-syncs, and appear in the PDF and email. Sent statement items are frozen.
+
+Choose **Split cost** for a shared expense such as shipping. Enter quantity and cost per unit (use quantity 1 for a single total expense), and the artist’s percentage of the cost. New items use the artist’s saved agreement as the default. The artist’s portion reduces their balance; the remainder reduces the gallery share. Both portions appear on the report, PDF and email.

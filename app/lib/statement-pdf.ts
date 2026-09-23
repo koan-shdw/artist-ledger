@@ -205,9 +205,11 @@ export async function statementPdf(
     summary(
       current.artist.agreementConfigured === false
         ? "Gallery share"
-        : varyingRates
-          ? "Gallery share (sale-specific rates)"
-          : `Gallery share (${current.artist.galleryBps / 100}%)`,
+        : current.splitCostGallery
+          ? "Gallery share after split costs"
+          : varyingRates
+            ? "Gallery share (sale-specific rates)"
+            : `Gallery share (${current.artist.galleryBps / 100}%)`,
       current.artist.agreementConfigured === false
         ? "Not set"
         : money(current.gallery, current.currency),

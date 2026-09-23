@@ -46,7 +46,7 @@ export const otherLineSchema = z.object({
   id: z.string().min(1),
   artistId: z.string().min(1),
   description: z.string().trim().min(1).max(300),
-  kind: z.enum(["deduction", "credit", "sale"]),
+  kind: z.enum(["deduction", "credit", "sale", "split_cost"]),
   quantity: z.number().int().min(1).max(1000000),
   unitAmount: cents,
   unitCost: cents,
@@ -58,6 +58,8 @@ export function otherLineAmount(line: OtherLine) {
     cost = line.quantity * line.unitCost;
   if (!Number.isSafeInteger(total) || !Number.isSafeInteger(cost))
     throw Error("Other item amount exceeds the supported range");
+  if (line.kind === "split_cost")
+    return Number(-((BigInt(total) * BigInt(line.artistBps) + 5000n) / 10000n));
   return line.kind === "deduction"
     ? -total
     : line.kind === "credit"
@@ -152,6 +154,7 @@ export type Ledger = {
 export type Report = {
   otherLines?: (OtherLine & { artistAmount: number })[];
   otherTotal?: number;
+  splitCostGallery?: number;
   deliveryProvider?: "gmail" | "resend";
   hasPdf?: boolean;
   artist: Artist;
@@ -286,6 +289,12 @@ export function reportFor(
     (sum, line) => sum + line.artistAmount,
     0,
   );
+  const splitCostGallery = otherLines
+    .filter((line) => line.kind === "split_cost")
+    .reduce(
+      (sum, line) => sum + line.quantity * line.unitAmount + line.artistAmount,
+      0,
+    );
   const payout = net - cost - gallery + otherTotal;
   if (!Number.isSafeInteger(otherTotal) || !Number.isSafeInteger(payout))
     throw Error("Report total exceeds the supported range");
@@ -309,6 +318,7 @@ export function reportFor(
     month,
     otherLines,
     otherTotal,
+    splitCostGallery,
     lines: lines.map((line) => ({
       ...line,
       payout:
@@ -323,7 +333,7 @@ export function reportFor(
     })),
     net,
     cost,
-    gallery,
+    gallery: gallery - splitCostGallery,
     payout,
     invoice: Math.max(0, payout),
     units: lines.reduce((n, l) => n + l.quantity, 0),
@@ -418,8 +428,15 @@ export function rangeReport(
     gallery,
     otherLines,
     otherTotal,
-    payout: net - cost - gallery + otherTotal,
-    invoice: Math.max(0, net - cost - gallery + otherTotal),
+    splitCostGallery: reports.reduce(
+      (sum, r) => sum + (r.splitCostGallery ?? 0),
+      0,
+    ),
+    payout: reports.reduce((sum, r) => sum + r.payout, 0),
+    invoice: Math.max(
+      0,
+      reports.reduce((sum, r) => sum + r.payout, 0),
+    ),
     units: reports.reduce((n, r) => n + r.units, 0),
     errors: [...new Set(errors)],
   };
@@ -514,9 +531,13 @@ export function reportText(r: Report) {
         `${l.order} | ${l.title} | gallery ${(l.galleryBps ?? r.artist.galleryBps) / 100}% | original sale ${money(l.originalNet ?? l.net, r.currency)} | original cost ${money(l.originalCost ?? l.cost, r.currency)}${l.note ? " | Note: " + l.note : ""}`,
     )
     .join("\n");
-  return `${adjustments ? "Sale adjustments\n" + adjustments + "\n\n" : ""}${r.galleryName}\nArtist sales statement — ${monthLabel(r.month)}\n${r.artist.name}\n\n${r.lines.map((l) => `${l.title} | ${l.quantity} units | sales ${money(l.net, r.currency)} | costs ${money(l.cost, r.currency)}`).join("\n")}\n\n${(r.otherLines?.length ?? 0) > 0 ? "Other report items\n" + r.otherLines!.map((line) => otherLineText(line, r.currency)).join("\n") + "\n\n" : ""}Shopify net product sales: ${money(r.net, r.currency)}\nShopify product costs: ${money(r.cost, r.currency)}\nGallery share of Shopify sales (${r.lines.some((l) => l.galleryBps !== undefined && l.galleryBps !== r.artist.galleryBps) ? "sale-specific rates" : r.artist.galleryBps / 100 + "%"}, ${r.basis === "after_costs" ? "after product costs" : "of net sales"}): ${money(r.gallery, r.currency)}\nOther items total: ${money(r.otherTotal ?? 0, r.currency)}\nArtist balance: ${money(r.payout, r.currency)}\n\n${r.payout >= 0 ? `Please invoice ${r.galleryName} for ${money(r.invoice, r.currency)}.` : `No invoice is due. Negative balance ${money(r.payout, r.currency)} requires gallery review; it has not been carried forward.`}\n\nIncludes selected products from orders placed in ${monthLabel(r.month)}, net of refunds and removed quantities at sync, plus listed other report items. Tax and shipping excluded. Costs apply to remaining units.\n`;
+  return `${adjustments ? "Sale adjustments\n" + adjustments + "\n\n" : ""}${r.galleryName}\nArtist sales statement — ${monthLabel(r.month)}\n${r.artist.name}\n\n${r.lines.map((l) => `${l.title} | ${l.quantity} units | sales ${money(l.net, r.currency)} | costs ${money(l.cost, r.currency)}`).join("\n")}\n\n${(r.otherLines?.length ?? 0) > 0 ? "Other report items\n" + r.otherLines!.map((line) => otherLineText(line, r.currency)).join("\n") + "\n\n" : ""}Shopify net product sales: ${money(r.net, r.currency)}\nShopify product costs: ${money(r.cost, r.currency)}\nGallery share of Shopify sales${r.splitCostGallery ? " after split costs" : ""} (${r.lines.some((l) => l.galleryBps !== undefined && l.galleryBps !== r.artist.galleryBps) ? "sale-specific rates" : r.artist.galleryBps / 100 + "%"}, ${r.basis === "after_costs" ? "after product costs" : "of net sales"}): ${money(r.gallery, r.currency)}\nOther items total: ${money(r.otherTotal ?? 0, r.currency)}\nArtist balance: ${money(r.payout, r.currency)}\n\n${r.payout >= 0 ? `Please invoice ${r.galleryName} for ${money(r.invoice, r.currency)}.` : `No invoice is due. Negative balance ${money(r.payout, r.currency)} requires gallery review; it has not been carried forward.`}\n\nIncludes selected products from orders placed in ${monthLabel(r.month)}, net of refunds and removed quantities at sync, plus listed other report items. Shopify tax and shipping excluded; manually entered expenses are listed above. Costs apply to remaining units.\n`;
 }
 export function otherLineText(line: OtherLine, currency: string) {
+  if (line.kind === "split_cost") {
+    const artist = -otherLineAmount(line);
+    return `${line.description} | Split cost | ${line.quantity} x ${money(line.unitAmount, currency)} | Artist ${line.artistBps / 100}%: ${money(artist, currency)} | Gallery ${(10000 - line.artistBps) / 100}%: ${money(line.quantity * line.unitAmount - artist, currency)} | artist adjustment ${money(-artist, currency)}`;
+  }
   return `${line.description} | ${line.quantity} x ${money(line.unitAmount, currency)}${line.kind === "sale" ? ` | cost/unit ${money(line.unitCost, currency)} | artist ${line.artistBps / 100}% of profit` : line.kind === "deduction" ? " | deduction" : " | credit"} | artist adjustment ${money(otherLineAmount(line), currency)}`;
 }
 export function csvCell(value: unknown) {

@@ -234,3 +234,38 @@ test("CSV cells cannot start spreadsheet formulas", () => {
   const csv = reportsCsv([reportFor(d, "2026-08", "a")]);
   assert.ok(csv.includes('"\'=1+1"'));
 });
+
+test("Split cost reduces both shares, preserves rounding and sums across months", () => {
+  const d = fixture();
+  const line = {
+    id: "shipping",
+    artistId: "a",
+    description: "Shipping to FTC",
+    kind: "split_cost" as const,
+    quantity: 1,
+    unitAmount: 50000,
+    unitCost: 0,
+    artistBps: 5000,
+  };
+  d.months["2026-08"].otherLines = [line];
+  const r = reportFor(d, "2026-08", "a");
+  assert.equal(r.payout, 23000);
+  assert.equal(r.gallery, 7000);
+  assert.equal(r.splitCostGallery, 25000);
+  assert.equal(r.payout + r.gallery + 50000, r.net - r.cost);
+  assert.match(reportText(r), /Split cost/);
+  assert.match(reportText(r), /Gallery 50%/);
+  d.months["2026-09"] = {
+    ...d.months["2026-08"],
+    lines: [],
+    otherLines: [{ ...line, unitAmount: 101, artistBps: 3333 }],
+  };
+  const second = reportFor(d, "2026-09", "a");
+  assert.equal(second.payout, -34);
+  assert.equal(second.splitCostGallery, 67);
+  const range = rangeReport(d, "2026-08", "2026-09", "a");
+  assert.equal(range.payout, 22966);
+  assert.equal(range.gallery, 6933);
+  assert.equal(otherLineAmount({ ...line, artistBps: 0 }), 0);
+  assert.equal(otherLineAmount({ ...line, artistBps: 10000 }), -50000);
+});
