@@ -25,6 +25,34 @@ export async function graphql(
     );
   return body.data;
 }
+export async function addBuyerNames(admin: Admin, orders: any[]) {
+  // Optional review context: unavailable customer permissions must not prevent sales sync.
+  if (!orders.length) return;
+  try {
+    const response = await admin.graphql(
+      "query BuyerNames($ids: [ID!]!) { nodes(ids: $ids) { ... on Order { id customer { firstName lastName } } } }",
+      { variables: { ids: orders.map((order) => order.id) } },
+    );
+    const body = (await response.json()) as {
+      data?: {
+        nodes?: ({
+          id: string;
+          customer?: { firstName?: string; lastName?: string };
+        } | null)[];
+      };
+    };
+    for (const node of body.data?.nodes ?? []) {
+      if (!node?.customer) continue;
+      const order = orders.find((order) => order.id === node.id);
+      if (order)
+        order.buyerName = [node.customer.firstName, node.customer.lastName]
+          .filter(Boolean)
+          .join(" ");
+    }
+  } catch {
+    /* Sales remain usable when optional buyer details are unavailable. */
+  }
+}
 export function amount(value: string, currency: string) {
   const n = Number(value) * minorUnits(currency);
   if (!Number.isFinite(n) || n < 0 || !Number.isSafeInteger(Math.round(n)))
@@ -132,6 +160,7 @@ export async function syncMonth(
       after,
       query: `created_at:>=${start} created_at:<${end} status:any`,
     });
+    await addBuyerNames(admin, page.orders.nodes);
     for (const order of page.orders.nodes) {
       if (
         order.test ||
@@ -179,6 +208,7 @@ export async function syncMonth(
             quantity: line.currentQuantity,
             net: amount(cash.amount, currency),
             order: order.name,
+            ...(order.buyerName ? { buyerName: order.buyerName } : {}),
           });
         }
         if (!connection.pageInfo.hasNextPage) break;

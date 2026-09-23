@@ -46,6 +46,35 @@ function fixture() {
   };
   return d;
 }
+test("saved artist agreement is inherited; sale exception affects only that line and totals reconcile", () => {
+  const d = fixture();
+  d.artists[0].agreementConfigured = false;
+  assert.ok(
+    reportFor(d, "2026-08", "a").errors.includes(
+      "Set the gallery percentage for this artist",
+    ),
+  );
+  d.artists[0].agreementConfigured = true;
+  d.months["2026-08"].lines.push({
+    ...d.months["2026-08"].lines[0],
+    id: "special",
+    quantity: 1,
+    net: 10000,
+  });
+  d.months["2026-08"].adjustments = { special: { galleryBps: 0 } };
+  const r = reportFor(d, "2026-08", "a");
+  assert.equal(r.lines[0].galleryBps, 4000);
+  assert.equal(r.lines[0].payout, 48000);
+  assert.equal(r.lines[1].payout, 8000);
+  assert.equal(r.payout, 56000);
+  assert.equal(r.errors.length, 0);
+  assert.equal(
+    r.lines.reduce((sum, line) => sum + line.payout!, 0),
+    r.payout,
+  );
+  d.months["2026-08"].adjustments.special = { net: 0, cost: 0, galleryBps: 0 };
+  assert.equal(reportFor(d, "2026-08", "a").lines[1].payout, 0);
+});
 test("cost-first agreement: 1000 sales less 200 costs split 40/60", () => {
   const r = reportFor(fixture(), "2026-08", "a");
   assert.equal(r.gallery, 32000);

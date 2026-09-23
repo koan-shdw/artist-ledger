@@ -1,11 +1,16 @@
 import { linkVendorProducts, importVendorArtists } from "./ledger";
 import { type Ledger, type Product, type SaleLine } from "./ledger";
-import { graphql, amount, monthBounds } from "./shopify-sync.server";
+import {
+  graphql,
+  amount,
+  monthBounds,
+  addBuyerNames,
+} from "./shopify-sync.server";
 import { QUERIES } from "./queries";
 type Admin = Parameters<typeof graphql>[0];
 // Shopify responses remain server-side. No continuation data is trusted from the browser.
 export interface SyncState {
-  phase: "products" | "orders" | "lines" | "complete";
+  phase: "products" | "orders" | "buyers" | "lines" | "complete";
   month: string;
   currency: string;
   start: string;
@@ -90,6 +95,7 @@ function addLines(s: SyncState, order: any, connection: any) {
       quantity: line.currentQuantity,
       net: amount(cash.amount, s.currency),
       order: order.name,
+      ...(order.buyerName ? { buyerName: order.buyerName } : {}),
     });
   }
 }
@@ -98,6 +104,11 @@ export async function advanceSync(
   s: SyncState,
 ): Promise<SyncState> {
   if (s.phase === "complete") return s;
+  if (s.phase === "buyers") {
+    await addBuyerNames(admin, s.pending);
+    s.phase = "orders";
+    return s;
+  }
   if (s.phase === "products") {
     const page = await graphql(admin, QUERIES.LedgerProducts, {
       after: s.after,
@@ -153,6 +164,7 @@ export async function advanceSync(
           "created_at:>=" + s.start + " created_at:<" + s.end + " status:any",
       });
       s.pending = page.orders.nodes;
+      s.phase = "buyers";
       s.after = page.orders.pageInfo.endCursor;
       s.moreOrders = page.orders.pageInfo.hasNextPage;
       return s;
@@ -180,6 +192,7 @@ export async function advanceSync(
       s.current = {
         id: order.id,
         name: order.name,
+        buyerName: order.buyerName,
         after: order.lineItems.pageInfo.endCursor,
       };
       s.phase = "lines";

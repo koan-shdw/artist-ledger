@@ -21,7 +21,10 @@ export default function InlineArtistField({
     [error, setError] = useState("");
   return editing ? (
     <form
-      className="inline-artist-field"
+      className={
+        "inline-artist-field " +
+        (percentage ? "inline-percentage" : "inline-email")
+      }
       onSubmit={async (e) => {
         e.preventDefault();
         setError("");
@@ -65,7 +68,11 @@ export default function InlineArtistField({
   ) : (
     <button
       type="button"
-      className="inline-edit-link"
+      className={
+        "inline-edit-control " +
+        (value ? "has-value" : "needs-value") +
+        (percentage ? " percentage-control" : " email-control")
+      }
       disabled={disabled}
       aria-label={label}
       onClick={() => {

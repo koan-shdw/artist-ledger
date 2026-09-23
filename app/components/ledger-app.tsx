@@ -20,12 +20,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+import StatementReview from "./statement-review";
 import {
   SidebarProvider,
   Sidebar,
@@ -216,9 +211,7 @@ export default function LedgerApp({
   }
   async function persist(next = data) {
     const result = await call("save", { data: next });
-    setData(next);
-    setVersion(result.version);
-    setDirty(false);
+    await refresh();
     setNotice("Changes saved");
     return result.version;
   }
@@ -339,7 +332,7 @@ export default function LedgerApp({
       : reportFor(data, month, a.id);
   });
   const selected = reports.filter((r) => r.artist.enabled);
-  const totals = selected.reduce(
+  const totals = reports.reduce(
     (s, r) => ({
       net: s.net + r.net,
       cost: s.cost + r.cost,
@@ -469,43 +462,45 @@ export default function LedgerApp({
     <SidebarProvider
       style={{ "--sidebar-width": "238px" } as React.CSSProperties}
     >
-      <Sidebar className="ledger-sidebar">
-        <SidebarHeader className="brand-header">
-          <div className="brand">
-            <Layers /> Artist Ledger
-          </div>
-        </SidebarHeader>
-        <SidebarContent>
-          <div className="workspace">GALLERY WORKSPACE</div>
-          <SidebarMenu className="nav-menu">
-            {nav.map((n) => (
-              <SidebarMenuItem key={n.label}>
-                <SidebarMenuButton
-                  isActive={page === n.label}
-                  onClick={() => {
-                    setPage(n.label);
-                    setQuery("");
-                  }}
-                  className="nav-button"
-                >
-                  <n.icon />
-                  <span>{n.label}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarContent>
-        <SidebarFooter className="rail-bottom">
-          <div className="store-icon">
-            <Layers size={17} />
-            <div>
-              {data.settings.galleryName}
-              <span>{demo ? "Demo workspace" : shop}</span>
+      {!detail && (
+        <Sidebar className="ledger-sidebar">
+          <SidebarHeader className="brand-header">
+            <div className="brand">
+              <Layers /> Artist Ledger
             </div>
-          </div>
-        </SidebarFooter>
-      </Sidebar>
-      <section className="main">
+          </SidebarHeader>
+          <SidebarContent>
+            <div className="workspace">GALLERY WORKSPACE</div>
+            <SidebarMenu className="nav-menu">
+              {nav.map((n) => (
+                <SidebarMenuItem key={n.label}>
+                  <SidebarMenuButton
+                    isActive={page === n.label}
+                    onClick={() => {
+                      setPage(n.label);
+                      setQuery("");
+                    }}
+                    className="nav-button"
+                  >
+                    <n.icon />
+                    <span>{n.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarContent>
+          <SidebarFooter className="rail-bottom">
+            <div className="store-icon">
+              <Layers size={17} />
+              <div>
+                {data.settings.galleryName}
+                <span>{demo ? "Demo workspace" : shop}</span>
+              </div>
+            </div>
+          </SidebarFooter>
+        </Sidebar>
+      )}
+      <section className="main" hidden={!!detail}>
         <header className="topline">
           <div className="breadcrumb">
             <SidebarTrigger />
@@ -685,7 +680,11 @@ export default function LedgerApp({
           )}
           {page === "Monthly reports" && (
             <>
-              <div className="stats">
+              <div className="totals-scope">
+                <strong>Month totals · All artists</strong>
+                <span>{reports.length} artists</span>
+              </div>
+              <div className="stats report-stats">
                 {[
                   [
                     "Net product sales",
@@ -701,7 +700,7 @@ export default function LedgerApp({
                   [
                     "Artist earnings",
                     totals.payout,
-                    `${selected.length} selected artists`,
+                    `${reports.length} artists`,
                   ],
                 ].map(([title, value, sub], i) => (
                   <div
@@ -709,7 +708,15 @@ export default function LedgerApp({
                     className={i === 3 ? "stat highlighted" : "stat"}
                   >
                     <span>{title}</span>
-                    <strong>{fmt(value as number)}</strong>
+                    <strong>
+                      {i > 1 &&
+                      reports.some(
+                        (r) =>
+                          r.units > 0 && r.artist.agreementConfigured === false,
+                      )
+                        ? "—"
+                        : fmt(value as number)}
+                    </strong>
                     <small>{sub}</small>
                   </div>
                 ))}
@@ -793,7 +800,7 @@ export default function LedgerApp({
                 </div>
               </div>
               <div className="tablewrap">
-                <table>
+                <table className="report-table">
                   <thead>
                     <tr>
                       <th>
@@ -849,49 +856,55 @@ export default function LedgerApp({
                           />
                         </td>
                         <td>
-                          <button
-                            className="artist-cell"
-                            onClick={() => setDetail(r.artist.id)}
-                          >
-                            <span className={`avatar a${i % 6}`}>
+                          <div className="report-artist">
+                            <span
+                              className={"avatar a" + (i % 6)}
+                              aria-hidden="true"
+                            >
                               {r.artist.name
                                 .split(" ")
                                 .slice(0, 2)
                                 .map((x) => x[0])
                                 .join("")}
                             </span>
-                            <span>
-                              <strong>{r.artist.name}</strong>
-                              <small>{r.artist.email || ""}</small>
-                            </span>
-                          </button>
-                          {!r.artist.email &&
-                            artistField(
-                              data.artists.find((a) => a.id === r.artist.id)!,
-                              "email",
-                              "Add email",
-                            )}
+                            <div className="report-artist-details">
+                              <button
+                                className="report-artist-name"
+                                onClick={() => setDetail(r.artist.id)}
+                              >
+                                {r.artist.name}
+                              </button>
+                              {artistField(
+                                data.artists.find((a) => a.id === r.artist.id)!,
+                                "email",
+                                "Add email",
+                              )}
+                            </div>
+                          </div>
                         </td>
                         <td>{r.units}</td>
                         <td>{fmt(r.net)}</td>
                         <td>{fmt(r.cost)}</td>
                         <td>
-                          <span className="split-label">
+                          <div className="report-percentage">
                             {artistField(
                               data.artists.find((a) => a.id === r.artist.id)!,
                               "galleryBps",
                               "Set percentage",
                             )}
-                          </span>
+                          </div>
                         </td>
                         <td className="earnings">
-                          {r.artist.agreementConfigured === false
-                            ? artistField(
-                                data.artists.find((a) => a.id === r.artist.id)!,
-                                "galleryBps",
-                                "Set percentage",
-                              )
-                            : fmt(r.payout)}
+                          {r.artist.agreementConfigured === false ? (
+                            <span
+                              className="pending-amount"
+                              aria-label="Awaiting gallery percentage"
+                            >
+                              —
+                            </span>
+                          ) : (
+                            fmt(r.payout)
+                          )}
                         </td>
                         <td>
                           <span
@@ -1567,222 +1580,59 @@ export default function LedgerApp({
           )}
         </DialogContent>
       </Dialog>
-      <Sheet open={!!detail} onOpenChange={(v) => !v && setDetail(null)}>
-        <SheetContent className="statement-sheet">
-          {viewed && (
-            <>
-              <div className="sheet-heading">
-                <div className="eyebrow">ARTIST STATEMENT</div>
-                <SheetTitle>{viewed.artist.name}</SheetTitle>
-                <SheetDescription>
-                  {monthLabel(month)} · {viewed.artist.email || "Email needed"}
-                  {savedReport ? " · Saved statement" : " · Draft"}
-                </SheetDescription>
-              </div>
-              <div className="invoice-card">
-                <span>Amount to invoice</span>
-                <strong>{money(viewed.invoice, viewed.currency)}</strong>
-                <p>
-                  {viewed.galleryName} · {viewed.currency}
-                </p>
-              </div>
-              <div className="breakdown">
-                <div>
-                  <span>Net product sales</span>
-                  <b>{money(viewed.net, viewed.currency)}</b>
-                </div>
-                <div>
-                  <span>Product costs</span>
-                  <b>− {money(viewed.cost, viewed.currency)}</b>
-                </div>
-                <div>
-                  <span>
-                    Gallery share ·{" "}
-                    {viewed.lines.some(
-                      (l) =>
-                        l.galleryBps !== undefined &&
-                        l.galleryBps !== viewed.artist.galleryBps,
-                    )
-                      ? "sale-specific rates"
-                      : `${viewed.artist.galleryBps / 100}%`}
-                  </span>
-                  <b>− {money(viewed.gallery, viewed.currency)}</b>
-                </div>
-                <div className="total">
-                  <span>Artist balance</span>
-                  <b>{money(viewed.payout, viewed.currency)}</b>
-                </div>
-              </div>
-              <h3>Sales items</h3>
-              <p className="small-note">
-                {savedReport
-                  ? "This saved statement keeps its original items and amounts."
-                  : "Review each sale, adjust its figures, then save or send the final report. Blue amounts use the defaults."}
+      {detail && viewed && (
+        <StatementReview
+          report={viewed}
+          data={data}
+          saved={!!savedReport}
+          busy={busy}
+          onBack={() => setDetail(null)}
+          onAdjust={adjustStatement}
+          artistFields={
+            savedReport ? (
+              <p>
+                {viewed.artist.email} · Gallery {viewed.artist.galleryBps / 100}
+                %
               </p>
-              {(savedReport
-                ? viewed.lines
-                : (period?.lines ?? []).filter(
-                    (l) =>
-                      data.products.find((p) => p.id === l.productId)
-                        ?.artistId === detail,
-                  )
-              ).map((l) => {
-                const p = data.products.find((p) => p.id === l.productId);
-                const effective = viewed.lines.find((row) => row.id === l.id);
-                const edit = period?.adjustments?.[l.id];
-                const unit = minorUnits(viewed.currency);
-                return (
-                  <div className="statement-sale" key={l.id}>
-                    <div className="item-choice">
-                      <Checkbox
-                        disabled={!!savedReport || !p?.included}
-                        checked={
-                          !!savedReport ||
-                          (!!p?.included && !period?.excluded.includes(l.id))
-                        }
-                        onCheckedChange={(v) => {
-                          if (!period) return;
-                          change({
-                            ...data,
-                            months: {
-                              ...data.months,
-                              [month]: {
-                                ...period,
-                                excluded:
-                                  v === true
-                                    ? period.excluded.filter(
-                                        (id) => id !== l.id,
-                                      )
-                                    : [...new Set([...period.excluded, l.id])],
-                              },
-                            },
-                          });
-                        }}
-                      />
-                      <div>
-                        <strong>{l.title}</strong>
-                        <span>
-                          {l.quantity} units · {l.order}
-                          {!p?.included && !savedReport
-                            ? " · Product excluded"
-                            : ""}
-                        </span>
-                      </div>
-                      <b>
-                        {money(effective?.net ?? l.net, viewed.currency)}
-                        {effective?.adjusted && (
-                          <small style={{ display: "block" }}>
-                            Adjusted · gallery{" "}
-                            {(effective.galleryBps ??
-                              viewed.artist.galleryBps) / 100}
-                            %{effective.note ? ` · ${effective.note}` : ""}
-                          </small>
-                        )}
-                      </b>
-                    </div>
-                    {!savedReport && (
-                      <div className="statement-sale-fields">
-                        <label>
-                          Sale amount
-                          <NumberEdit
-                            label={"Sale amount for " + l.order + " " + l.title}
-                            disabled={busy}
-                            value={
-                              edit?.net === undefined
-                                ? undefined
-                                : edit.net / unit
-                            }
-                            defaultValue={l.net / unit}
-                            onChange={(v) =>
-                              adjustStatement(l.id, {
-                                net:
-                                  v === undefined
-                                    ? undefined
-                                    : Math.round(v * unit),
-                              })
-                            }
-                          />
-                        </label>
-                        <label>
-                          Total cost
-                          <NumberEdit
-                            label={"Total cost for " + l.order + " " + l.title}
-                            disabled={busy}
-                            value={
-                              edit?.cost === undefined
-                                ? undefined
-                                : edit.cost / unit
-                            }
-                            defaultValue={
-                              p?.unitCost == null
-                                ? undefined
-                                : (p.unitCost * l.quantity) / unit
-                            }
-                            onChange={(v) =>
-                              adjustStatement(l.id, {
-                                cost:
-                                  v === undefined
-                                    ? undefined
-                                    : Math.round(v * unit),
-                              })
-                            }
-                          />
-                        </label>
-                        <label>
-                          Gallery %
-                          <NumberEdit
-                            label={
-                              "Gallery percentage for " +
-                              l.order +
-                              " " +
-                              l.title
-                            }
-                            percentage
-                            disabled={busy}
-                            value={
-                              edit?.galleryBps === undefined
-                                ? undefined
-                                : edit.galleryBps / 100
-                            }
-                            defaultValue={
-                              viewed.artist.agreementConfigured === false
-                                ? undefined
-                                : viewed.artist.galleryBps / 100
-                            }
-                            onChange={(v) =>
-                              adjustStatement(l.id, {
-                                galleryBps:
-                                  v === undefined
-                                    ? undefined
-                                    : Math.round(v * 100),
-                              })
-                            }
-                          />
-                        </label>
-                        <label className="statement-note">
-                          Adjustment note
-                          <Input
-                            aria-label={"Note for " + l.order + " " + l.title}
-                            maxLength={1000}
-                            disabled={busy}
-                            value={edit?.note ?? ""}
-                            onChange={(e) =>
-                              adjustStatement(l.id, { note: e.target.value })
-                            }
-                          />
-                        </label>
-                        <Button
-                          variant="ghost"
-                          disabled={busy || !edit}
-                          onClick={() => adjustStatement(l.id, null)}
-                        >
-                          Reset
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            ) : (
+              <>
+                <div>
+                  <Label>Artist email</Label>
+                  {artistField(
+                    data.artists.find((a) => a.id === detail)!,
+                    "email",
+                    "Add email",
+                  )}
+                </div>
+                <div>
+                  <Label>Default gallery percentage</Label>
+                  {artistField(
+                    data.artists.find((a) => a.id === detail)!,
+                    "galleryBps",
+                    "Set percentage",
+                  )}
+                </div>
+              </>
+            )
+          }
+          onInclude={(id, included) => {
+            if (!period) return;
+            change({
+              ...data,
+              months: {
+                ...data.months,
+                [month]: {
+                  ...period,
+                  excluded: included
+                    ? period.excluded.filter((item) => item !== id)
+                    : [...new Set([...period.excluded, id])],
+                },
+              },
+            });
+          }}
+          messages={
+            <>
+              {" "}
               {viewed.errors.length > 0 && !savedReport && (
                 <div className="message error">{viewed.errors.join(". ")}</div>
               )}
@@ -1808,6 +1658,11 @@ export default function LedgerApp({
                   the draft and export PDF.
                 </p>
               )}
+            </>
+          }
+          actions={
+            <>
+              {" "}
               <div className="sheet-actions">
                 {!savedReport && (
                   <Button
@@ -1842,9 +1697,9 @@ export default function LedgerApp({
                 </Button>
               </div>
             </>
-          )}
-        </SheetContent>
-      </Sheet>
+          }
+        />
+      )}
       <Dialog open={sendOpen} onOpenChange={setSendOpen}>
         <DialogContent className="send-dialog">
           <DialogTitle>Review monthly reports</DialogTitle>

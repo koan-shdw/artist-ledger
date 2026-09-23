@@ -91,7 +91,13 @@ export async function statementPdf(
     aligned("Units", 330, 9);
     aligned("Net sales", 406, 9);
     aligned("Costs", 477, 9);
-    aligned("After costs", right - 7, 9);
+    aligned(
+      current.lines.every((line) => line.payout !== undefined)
+        ? "Artist earns"
+        : "After costs",
+      right - 7,
+      9,
+    );
     y -= 27;
   };
   for (const statement of statements) {
@@ -112,19 +118,27 @@ export async function statementPdf(
       paragraph(`Artist email: ${current.artist.email}`);
     const groups = new Map<
       string,
-      { title: string; units: number; net: number; cost: number }
+      {
+        title: string;
+        units: number;
+        net: number;
+        cost: number;
+        payout: number;
+      }
     >();
     for (const line of current.lines) {
       const key = line.id;
       const item = groups.get(key) ?? {
-        title: `${line.order} · ${line.title} · Gallery ${(line.galleryBps ?? current.artist.galleryBps) / 100}%`,
+        title: `${line.order} · ${line.title} · Gallery ${(line.galleryBps ?? current.artist.galleryBps) / 100}%${line.payout === undefined ? "" : ` · Artist/unit ${money(line.payout / (line.quantity || 1), current.currency)}`}`,
         units: 0,
         net: 0,
         cost: 0,
+        payout: 0,
       };
       item.units += line.quantity;
       item.net += line.net;
       item.cost += line.cost;
+      item.payout += line.payout ?? line.net - line.cost;
       groups.set(key, item);
     }
     tableHead();
@@ -148,7 +162,7 @@ export async function statementPdf(
           aligned(String(item.units), 330, 9);
           aligned(money(item.net, current.currency), 406, 9);
           aligned(money(item.cost, current.currency), 477, 9);
-          aligned(money(item.net - item.cost, current.currency), right - 7, 9);
+          aligned(money(item.payout, current.currency), right - 7, 9);
         }
         y = top - height;
         page.drawLine({

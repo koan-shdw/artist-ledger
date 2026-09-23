@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { syncMonth, monthBounds } from "./.generated/sync.mjs";
+import { syncMonth, monthBounds, addBuyerNames } from "./.generated/sync.mjs";
 import { emptyLedger } from "../app/lib/ledger.ts";
 import {beginSync,advanceSync,finishSync} from "./.generated/steps.mjs";
 test("resumable sync survives serialization and matches the original sync",async()=>{
@@ -20,6 +20,13 @@ test("resumable sync survives serialization and matches the original sync",async
  assert.equal(original.products[0].title,"Override");
 });
 const month = "2026-08";
+test("buyer context uses names only and permission failure does not block sales", async () => {
+  const orders=[{id:"order1"}];
+  await addBuyerNames({graphql:async()=>Response.json({data:{nodes:[{id:"order1",customer:{firstName:"Sample",lastName:"Buyer"}}]}})},orders);
+  assert.equal(orders[0].buyerName,"Sample Buyer");
+  await addBuyerNames({graphql:async()=>{throw Error("Access denied");}},orders);
+  assert.equal(orders[0].buyerName,"Sample Buyer");
+});
 const money = (amount) => ({ shopMoney: { amount, currencyCode: "USD" } });
 const page = (nodes, more = false, cursor = null) => ({
   nodes,

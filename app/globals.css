@@ -1018,28 +1018,152 @@ input:focus-visible {
     flex-wrap: wrap;
   }
 }
-.inline-edit-link {
-  color: #2166b5;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+.inline-edit-control {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #245b4d;
+  background: transparent;
+  text-decoration: none;
   cursor: pointer;
-  font-size: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+}
+.inline-edit-control.needs-value {
+  background: #f0f6f2;
+  border-color: #dce8df;
+}
+.inline-edit-control.has-value.email-control {
+  color: #65796b;
+  padding-left: 0;
+  overflow-wrap: anywhere;
+}
+.inline-edit-control:hover {
+  background: #e8f1ec;
+  border-color: #c5d9cd;
+}
+.inline-edit-control:focus-visible,
+.report-artist-name:focus-visible {
+  outline: 2px solid #438b72;
+  outline-offset: 3px;
 }
 .inline-artist-field {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
   align-items: center;
-  gap: 7px;
-  max-width: 380px;
+  gap: 5px;
+  width: 240px;
 }
 .inline-artist-field input {
-  min-width: 110px;
-  width: 180px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  width: 100%;
+  height: 32px;
+}
+.inline-artist-field button {
+  height: 27px;
+  min-height: 27px;
+  padding: 3px 9px;
+  font-size: 12px;
+}
+.inline-artist-field.inline-percentage {
+  width: 135px;
 }
 .inline-artist-field small {
-  width: 100%;
+  grid-column: 1 / -1;
   color: #a33c32;
   white-space: normal;
+}
+.totals-scope {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 25px;
+  color: #4a6558;
+  font-size: 13px;
+}
+.totals-scope span {
+  color: #738479;
+  font-size: 12px;
+}
+.report-stats {
+  margin-top: 12px;
+  margin-bottom: 30px;
+}
+.report-stats .stat {
+  padding: 20px;
+  gap: 12px;
+}
+.report-table th,
+.report-table td {
+  padding: 14px 16px;
+}
+.report-table th:first-child,
+.report-table td:first-child {
+  width: 48px;
+}
+.report-table td {
+  vertical-align: middle;
+}
+.report-table th:nth-child(2) {
+  min-width: 270px;
+}
+.report-table th:nth-child(6) {
+  min-width: 170px;
+}
+.report-table th:nth-child(3),
+.report-table th:nth-child(4),
+.report-table th:nth-child(5),
+.report-table th:nth-child(7),
+.report-table td:nth-child(3),
+.report-table td:nth-child(4),
+.report-table td:nth-child(5),
+.report-table td:nth-child(7) {
+  text-align: right;
+}
+.report-table th:nth-child(9),
+.report-table td:nth-child(9) {
+  text-align: center;
+}
+.report-artist {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.report-artist .avatar {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+}
+.report-artist-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.report-artist-name {
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+  color: #244839;
+  cursor: pointer;
+}
+.report-artist-name:hover {
+  color: #14745b;
+}
+.report-artist-details .email-control {
+  max-width: 260px;
+  white-space: normal;
+}
+.pending-amount {
+  color: #819187;
+  font-weight: 400;
 }
 .statement-sale {
   border: 1px solid #e0e7e2;
@@ -1089,4 +1213,148 @@ input:focus-visible {
   .statement-sale-fields .statement-note {
     grid-column: auto;
   }
+}
+.main[hidden] {
+  display: none !important;
+}
+.statement-page {
+  min-width: 0;
+}
+.statement-page .content {
+  max-width: none;
+}
+.statement-agreement {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+.statement-agreement > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.statement-table-scroll {
+  overflow-x: auto;
+}
+.statement-table {
+  width: 100%;
+  min-width: 950px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.statement-table th {
+  padding: 12px 10px;
+  background: #f4f7f5;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: right;
+}
+.statement-table td {
+  padding: 15px 10px;
+  border-bottom: 1px solid #e0e7e2;
+  text-align: right;
+  vertical-align: top;
+}
+.statement-table th:nth-child(2),
+.statement-table td:nth-child(2) {
+  text-align: left;
+  width: 34%;
+}
+.statement-table th:first-child,
+.statement-table td:first-child {
+  width: 48px;
+  text-align: center;
+}
+.statement-table td small {
+  display: block;
+  margin-top: 6px;
+  color: #607569;
+  font-size: 12px;
+}
+.statement-table input[type="number"] {
+  width: 92px;
+  text-align: right;
+}
+.statement-table .sale-default {
+  color: #2166b5;
+  background: #f5f9ff;
+}
+.statement-table .sale-note {
+  width: 100%;
+  margin-top: 9px;
+  border: 0;
+  border-bottom: 1px solid #e0e7e2;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 4px 0;
+  height: 30px;
+  font-size: 12px;
+}
+.statement-table td:last-child button {
+  display: block;
+  margin-left: auto;
+  margin-top: 5px;
+}
+.excluded-sale {
+  opacity: 0.65;
+}
+.default-legend {
+  font-size: 12px;
+  color: #2166b5;
+}
+.statement-footer {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #e0e7e2;
+}
+.statement-footer .sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.report-stats {
+  gap: 24px;
+  border-top: 1px solid #e0e7e2;
+  border-bottom: 1px solid #e0e7e2;
+  padding: 18px 0;
+}
+.report-stats .stat,
+.report-stats .stat.highlighted {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: #203d32;
+  gap: 8px;
+}
+.report-stats .stat.highlighted strong {
+  color: #17584a;
+}
+.report-stats .stat.highlighted > span {
+  color: #4b6257;
+}
+.statement-page {
+  width: 100%;
+}
+.statement-page .report-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 600px) {
+  .statement-page .report-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.report-stats .stat strong {
+  font-size: 26px;
+}
+.report-stats .stat small {
+  color: #607569;
+}
+.report-table th:nth-child(2) {
+  min-width: 220px;
+}
+.report-table th:nth-child(6) {
+  min-width: 120px;
 }

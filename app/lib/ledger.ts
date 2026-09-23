@@ -33,6 +33,7 @@ export const lineSchema = z.object({
   quantity: z.number().int().min(0).max(1000000),
   net: cents,
   order: z.string(),
+  buyerName: z.string().max(300).optional(),
 });
 export const adjustmentSchema = z.object({
   net: cents.optional(),
@@ -133,6 +134,7 @@ export type Report = {
     originalCost?: number;
     note?: string;
     adjusted?: boolean;
+    payout?: number;
   })[];
   net: number;
   cost: number;
@@ -236,21 +238,17 @@ export function reportFor(
     lines.some((l) => !Number.isSafeInteger(l.cost))
   )
     throw Error("Amount exceeds the supported range");
-  const groups = new Map<number, { net: number; cost: number }>();
-  for (const line of lines) {
-    const rate = line.galleryBps;
-    const group = groups.get(rate) ?? { net: 0, cost: 0 };
-    group.net += line.net;
-    group.cost += line.cost;
-    groups.set(rate, group);
-  }
-  const gallery = [...groups].reduce((sum, [rate, group]) => {
-    const base =
-      data.settings.basis === "after_costs"
-        ? Math.max(0, group.net - group.cost)
-        : group.net;
-    return sum + Number((BigInt(base) * BigInt(rate) + 5000n) / 10000n);
-  }, 0);
+  const gallery = lines.reduce(
+    (sum, line) =>
+      sum +
+      saleGalleryShare(
+        line.net,
+        line.cost,
+        line.galleryBps,
+        data.settings.basis,
+      ),
+    0,
+  );
   const payout = net - cost - gallery;
   if (!artist.email) errors.push("Add an artist email address");
   if (!period) errors.push("Sync sales for this month");
@@ -269,7 +267,18 @@ export function reportFor(
           : artist.agreementConfigured,
     },
     month,
-    lines,
+    lines: lines.map((line) => ({
+      ...line,
+      payout:
+        line.net -
+        line.cost -
+        saleGalleryShare(
+          line.net,
+          line.cost,
+          line.galleryBps,
+          data.settings.basis,
+        ),
+    })),
     net,
     cost,
     gallery,
@@ -285,6 +294,15 @@ export function reportFor(
 }
 export function minorUnits(currency: string) {
   return currency === "JPY" ? 1 : 100;
+}
+export function saleGalleryShare(
+  net: number,
+  cost: number,
+  galleryBps: number,
+  basis: Settings["basis"],
+) {
+  const base = basis === "after_costs" ? Math.max(0, net - cost) : net;
+  return Number((BigInt(base) * BigInt(galleryBps) + 5000n) / 10000n);
 }
 export function money(amount: number, currency = "USD") {
   return new Intl.NumberFormat("en", { style: "currency", currency }).format(
