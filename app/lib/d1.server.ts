@@ -32,6 +32,74 @@ export function createDatabase(binding: () => D1Database) {
       .prepare(query)
       .bind(...values);
   return {
+    gmail: {
+      async connection(shop: string) {
+        return sql(
+          "SELECT email,token FROM GmailConnection WHERE shop=?",
+          shop,
+        ).first<{ email: string; token: string }>();
+      },
+      async connect(shop: string, email: string, token: string) {
+        await sql(
+          "INSERT INTO GmailConnection (shop,email,token) VALUES (?,?,?) ON CONFLICT(shop) DO UPDATE SET email=excluded.email,token=excluded.token",
+          shop,
+          email,
+          token,
+        ).run();
+      },
+      async disconnect(shop: string) {
+        await binding().batch([
+          sql("DELETE FROM GmailConnection WHERE shop=?", shop),
+          sql("DELETE FROM GmailOAuth WHERE shop=?", shop),
+        ]);
+      },
+      async begin(
+        state: string,
+        shop: string,
+        expires: number,
+        verifier: string,
+      ) {
+        await sql("DELETE FROM GmailOAuth WHERE expires<?", Date.now()).run();
+        await sql(
+          "INSERT INTO GmailOAuth (state,shop,expires,verifier) VALUES (?,?,?,?)",
+          state,
+          shop,
+          expires,
+          verifier,
+        ).run();
+      },
+      async bindBrowser(state: string, browser: string) {
+        return sql(
+          "UPDATE GmailOAuth SET browser=? WHERE state=? AND browser IS NULL AND expires>? RETURNING shop,verifier",
+          browser,
+          state,
+          Date.now(),
+        ).first<{ shop: string; verifier: string }>();
+      },
+      async consume(state: string, browser: string) {
+        return sql(
+          "DELETE FROM GmailOAuth WHERE state=? AND browser=? AND expires>? RETURNING shop,verifier",
+          state,
+          browser,
+          Date.now(),
+        ).first<{ shop: string; verifier: string }>();
+      },
+      async claim(id: string, shop: string) {
+        const r = await sql(
+          "INSERT OR IGNORE INTO GmailDelivery (id,shop) VALUES (?,?)",
+          id,
+          shop,
+        ).run();
+        return r.meta.changes === 1;
+      },
+      async release(id: string, shop: string) {
+        await sql(
+          "DELETE FROM GmailDelivery WHERE id=? AND shop=?",
+          id,
+          shop,
+        ).run();
+      },
+    },
     galleryWorkspace: {
       async upsert({
         where,
@@ -219,6 +287,9 @@ export function createDatabase(binding: () => D1Database) {
           "MonthlyRun",
           "SyncJob",
           "GalleryWorkspace",
+          "GmailConnection",
+          "GmailOAuth",
+          "GmailDelivery",
         ].map((table) => sql("DELETE FROM " + table + " WHERE shop=?", shop)),
       );
     },

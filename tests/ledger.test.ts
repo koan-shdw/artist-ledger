@@ -7,6 +7,9 @@ import {
   artistSchema,
   reportsCsv,
   money,
+  reportText,
+  rangeReport,
+  otherLineAmount,
 } from "../app/lib/ledger.ts";
 function fixture() {
   const d = emptyLedger();
@@ -46,6 +49,61 @@ function fixture() {
   };
   return d;
 }
+test("other items deduct purchases, add profit shares, and stay with their artist and month", () => {
+  const d = fixture();
+  const deduction = {
+    id: "purchase",
+    artistId: "a",
+    description: "Artist shirt order",
+    kind: "deduction" as const,
+    quantity: 10,
+    unitAmount: 2000,
+    unitCost: 0,
+    artistBps: 10000,
+  };
+  const wholesale = {
+    ...deduction,
+    id: "wholesale",
+    description: "Retailer shirts",
+    kind: "sale" as const,
+    quantity: 20,
+    unitAmount: 5000,
+    unitCost: 2000,
+    artistBps: 6000,
+  };
+  d.months["2026-08"].otherLines = [
+    deduction,
+    wholesale,
+    { ...deduction, id: "other", artistId: "b" },
+  ];
+  const r = reportFor(d, "2026-08", "a");
+  assert.equal(r.otherTotal, 16000);
+  assert.equal(r.payout, 64000);
+  assert.equal(r.otherLines?.length, 2);
+  assert.match(reportText(r), /Artist shirt order/);
+  assert.match(reportText(r), /Retailer shirts/);
+  d.months["2026-09"] = {
+    lines: [],
+    excluded: [],
+    syncedAt: "2026-10-01",
+    warnings: [],
+    otherLines: [
+      {
+        ...deduction,
+        id: "credit",
+        kind: "credit",
+        quantity: 1,
+        unitAmount: 1000,
+      },
+    ],
+  };
+  assert.equal(rangeReport(d, "2026-08", "2026-09", "a").payout, 65000);
+  assert.equal(otherLineAmount({ ...wholesale, unitAmount: 1000 }), 0);
+  assert.throws(() =>
+    otherLineAmount({ ...wholesale, quantity: Number.MAX_SAFE_INTEGER }),
+  );
+  assert.equal(d.months["2026-08"].lines[0].net, 100000);
+});
 test("saved artist agreement is inherited; sale exception affects only that line and totals reconcile", () => {
   const d = fixture();
   d.artists[0].agreementConfigured = false;

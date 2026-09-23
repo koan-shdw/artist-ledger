@@ -42,6 +42,31 @@ export const adjustmentSchema = z.object({
   note: z.string().max(1000).optional(),
 });
 export type SaleAdjustment = z.infer<typeof adjustmentSchema>;
+export const otherLineSchema = z.object({
+  id: z.string().min(1),
+  artistId: z.string().min(1),
+  description: z.string().trim().min(1).max(300),
+  kind: z.enum(["deduction", "credit", "sale"]),
+  quantity: z.number().int().min(1).max(1000000),
+  unitAmount: cents,
+  unitCost: cents,
+  artistBps: z.number().int().min(0).max(10000),
+});
+export type OtherLine = z.infer<typeof otherLineSchema>;
+export function otherLineAmount(line: OtherLine) {
+  const total = line.quantity * line.unitAmount,
+    cost = line.quantity * line.unitCost;
+  if (!Number.isSafeInteger(total) || !Number.isSafeInteger(cost))
+    throw Error("Other item amount exceeds the supported range");
+  return line.kind === "deduction"
+    ? -total
+    : line.kind === "credit"
+      ? total
+      : Number(
+          (BigInt(Math.max(0, total - cost)) * BigInt(line.artistBps) + 5000n) /
+            10000n,
+        );
+}
 export const settingsSchema = z.object({
   galleryName: z.string().trim().min(1).max(150),
   currency: z.enum(["USD", "GBP", "EUR", "AUD", "CAD", "NZD", "JPY"]),
@@ -119,11 +144,15 @@ export type Ledger = {
       syncedAt: string;
       warnings: string[];
       adjustments?: Record<string, SaleAdjustment>;
+      otherLines?: OtherLine[];
     }
   >;
   settings: Settings;
 };
 export type Report = {
+  otherLines?: (OtherLine & { artistAmount: number })[];
+  otherTotal?: number;
+  deliveryProvider?: "gmail" | "resend";
   hasPdf?: boolean;
   artist: Artist;
   month: string;
@@ -168,6 +197,7 @@ export const ledgerSchema = z.object({
       syncedAt: z.string(),
       warnings: z.array(z.string()),
       adjustments: z.record(adjustmentSchema).optional(),
+      otherLines: z.array(otherLineSchema).max(500).optional(),
     }),
   ),
   settings: settingsSchema,
@@ -249,17 +279,27 @@ export function reportFor(
       ),
     0,
   );
-  const payout = net - cost - gallery;
+  const otherLines = (period?.otherLines ?? [])
+    .filter((line) => line.artistId === artistId)
+    .map((line) => ({ ...line, artistAmount: otherLineAmount(line) }));
+  const otherTotal = otherLines.reduce(
+    (sum, line) => sum + line.artistAmount,
+    0,
+  );
+  const payout = net - cost - gallery + otherTotal;
+  if (!Number.isSafeInteger(otherTotal) || !Number.isSafeInteger(payout))
+    throw Error("Report total exceeds the supported range");
   if (!artist.email) errors.push("Add an artist email address");
   if (!period) errors.push("Sync sales for this month");
   if (period?.warnings.length) errors.push(...period.warnings);
-  if (!lines.length) errors.push("No included sales items");
+  if (!lines.length && !otherLines.length)
+    errors.push("No included sales items");
   return {
     artist: {
       ...artist,
       agreementConfigured:
         artist.agreementConfigured === false &&
-        lines.length > 0 &&
+        (lines.length > 0 || otherLines.length > 0) &&
         lines.every(
           (l) => period?.adjustments?.[l.id]?.galleryBps !== undefined,
         )
@@ -267,6 +307,8 @@ export function reportFor(
           : artist.agreementConfigured,
     },
     month,
+    otherLines,
+    otherTotal,
     lines: lines.map((line) => ({
       ...line,
       payout:
@@ -353,12 +395,20 @@ export function rangeReport(
   const net = reports.reduce((n, r) => n + r.net, 0);
   const cost = reports.reduce((n, r) => n + r.cost, 0);
   const gallery = reports.reduce((n, r) => n + r.gallery, 0);
+  const otherLines = reports.flatMap((r) =>
+    (r.otherLines ?? []).map((line) => ({
+      ...line,
+      description: `${line.description} · ${monthLabel(r.month)}`,
+    })),
+  );
+  const otherTotal = reports.reduce((sum, r) => sum + (r.otherTotal ?? 0), 0);
   const errors = reports.flatMap((r) =>
     r.errors
       .filter((e) => e !== "No included sales items")
       .map((e) => `${monthLabel(r.month)}: ${e}`),
   );
-  if (!lines.length) errors.push("No included sales items");
+  if (!lines.length && !otherLines.length)
+    errors.push("No included sales items");
   return {
     ...first,
     month: from === to ? from : `${from}..${to}`,
@@ -366,8 +416,10 @@ export function rangeReport(
     net,
     cost,
     gallery,
-    payout: net - cost - gallery,
-    invoice: Math.max(0, net - cost - gallery),
+    otherLines,
+    otherTotal,
+    payout: net - cost - gallery + otherTotal,
+    invoice: Math.max(0, net - cost - gallery + otherTotal),
     units: reports.reduce((n, r) => n + r.units, 0),
     errors: [...new Set(errors)],
   };
@@ -462,7 +514,10 @@ export function reportText(r: Report) {
         `${l.order} | ${l.title} | gallery ${(l.galleryBps ?? r.artist.galleryBps) / 100}% | original sale ${money(l.originalNet ?? l.net, r.currency)} | original cost ${money(l.originalCost ?? l.cost, r.currency)}${l.note ? " | Note: " + l.note : ""}`,
     )
     .join("\n");
-  return `${adjustments ? "Sale adjustments\n" + adjustments + "\n\n" : ""}${r.galleryName}\nArtist sales statement — ${monthLabel(r.month)}\n${r.artist.name}\n\n${r.lines.map((l) => `${l.title} | ${l.quantity} units | sales ${money(l.net, r.currency)} | costs ${money(l.cost, r.currency)}`).join("\n")}\n\nNet product sales: ${money(r.net, r.currency)}\nProduct costs: ${money(r.cost, r.currency)}\nGallery share (${r.lines.some((l) => l.galleryBps !== undefined && l.galleryBps !== r.artist.galleryBps) ? "sale-specific rates" : r.artist.galleryBps / 100 + "%"}, ${r.basis === "after_costs" ? "after product costs" : "of net sales"}): ${money(r.gallery, r.currency)}\nArtist balance: ${money(r.payout, r.currency)}\n\n${r.payout >= 0 ? `Please invoice ${r.galleryName} for ${money(r.invoice, r.currency)}.` : `No invoice is due. Negative balance ${money(r.payout, r.currency)} requires gallery review; it has not been carried forward.`}\n\nIncludes selected products from orders placed in ${monthLabel(r.month)}, net of refunds and removed quantities at sync. Tax and shipping excluded. Costs apply to remaining units.\n`;
+  return `${adjustments ? "Sale adjustments\n" + adjustments + "\n\n" : ""}${r.galleryName}\nArtist sales statement — ${monthLabel(r.month)}\n${r.artist.name}\n\n${r.lines.map((l) => `${l.title} | ${l.quantity} units | sales ${money(l.net, r.currency)} | costs ${money(l.cost, r.currency)}`).join("\n")}\n\n${(r.otherLines?.length ?? 0) > 0 ? "Other report items\n" + r.otherLines!.map((line) => otherLineText(line, r.currency)).join("\n") + "\n\n" : ""}Shopify net product sales: ${money(r.net, r.currency)}\nShopify product costs: ${money(r.cost, r.currency)}\nGallery share of Shopify sales (${r.lines.some((l) => l.galleryBps !== undefined && l.galleryBps !== r.artist.galleryBps) ? "sale-specific rates" : r.artist.galleryBps / 100 + "%"}, ${r.basis === "after_costs" ? "after product costs" : "of net sales"}): ${money(r.gallery, r.currency)}\nOther items total: ${money(r.otherTotal ?? 0, r.currency)}\nArtist balance: ${money(r.payout, r.currency)}\n\n${r.payout >= 0 ? `Please invoice ${r.galleryName} for ${money(r.invoice, r.currency)}.` : `No invoice is due. Negative balance ${money(r.payout, r.currency)} requires gallery review; it has not been carried forward.`}\n\nIncludes selected products from orders placed in ${monthLabel(r.month)}, net of refunds and removed quantities at sync, plus listed other report items. Tax and shipping excluded. Costs apply to remaining units.\n`;
+}
+export function otherLineText(line: OtherLine, currency: string) {
+  return `${line.description} | ${line.quantity} x ${money(line.unitAmount, currency)}${line.kind === "sale" ? ` | cost/unit ${money(line.unitCost, currency)} | artist ${line.artistBps / 100}% of profit` : line.kind === "deduction" ? " | deduction" : " | credit"} | artist adjustment ${money(otherLineAmount(line), currency)}`;
 }
 export function csvCell(value: unknown) {
   let s = String(value ?? "");
@@ -480,6 +535,7 @@ export function reportsCsv(reports: Report[]) {
       "Product costs",
       "Gallery %",
       "Gallery share",
+      "Other items total",
       "Artist balance",
       "Invoice amount",
     ],
@@ -492,6 +548,7 @@ export function reportsCsv(reports: Report[]) {
       r.cost / minorUnits(r.currency),
       r.artist.galleryBps / 100,
       r.gallery / minorUnits(r.currency),
+      (r.otherTotal ?? 0) / minorUnits(r.currency),
       r.payout / minorUnits(r.currency),
       r.invoice / minorUnits(r.currency),
     ]),

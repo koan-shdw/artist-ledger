@@ -45,6 +45,17 @@ export async function saveWorkspace(
 }
 export function parseEdits(incoming: unknown, current: Ledger): Ledger {
   const value = ledgerSchema.parse(incoming);
+  for (const month of Object.values(value.months)) {
+    const lines = month.otherLines ?? [];
+    if (new Set(lines.map((line) => line.id)).size !== lines.length)
+      throw Error("Duplicate other item IDs");
+    if (
+      lines.some(
+        (line) => !value.artists.some((artist) => artist.id === line.artistId),
+      )
+    )
+      throw Error("Choose an existing artist for other report items");
+  }
   for (const artist of value.artists) {
     if (
       artist.vendor &&
@@ -95,6 +106,7 @@ export function parseEdits(incoming: unknown, current: Ledger): Ledger {
         key,
         {
           ...m,
+          otherLines: value.months[key]?.otherLines ?? m.otherLines ?? [],
           adjustments: Object.fromEntries(
             Object.entries(
               value.months[key]?.adjustments ?? m.adjustments ?? {},

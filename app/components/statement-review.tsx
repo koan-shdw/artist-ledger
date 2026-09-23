@@ -1,8 +1,10 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Checkbox } from "./ui/checkbox";
 import { NumberEdit } from "./monthly-sales";
+import OtherReportItems from "./other-report-items";
+import type { OtherLine } from "../lib/ledger";
 import {
   money,
   minorUnits,
@@ -23,6 +25,7 @@ export default function StatementReview({
   onInclude,
   actions,
   messages,
+  onOtherLines,
 }: {
   report: Report;
   data: Ledger;
@@ -34,7 +37,9 @@ export default function StatementReview({
   onBack: () => void;
   onAdjust: (id: string, patch: SaleAdjustment | null) => void;
   onInclude: (id: string, included: boolean) => void;
+  onOtherLines: (lines: OtherLine[]) => void;
 }) {
+  const [editingOther, setEditingOther] = useState(false);
   useEffect(() => {
     document
       .querySelector(".statement-page")
@@ -53,7 +58,7 @@ export default function StatementReview({
   return (
     <section className="main statement-page">
       <div className="content">
-        <Button variant="ghost" onClick={onBack}>
+        <Button variant="ghost" onClick={onBack} disabled={editingOther}>
           ← Monthly reports
         </Button>
         <div className="page-heading">
@@ -263,8 +268,27 @@ export default function StatementReview({
           PDFs and emails. Per-unit earnings are rounded for display; the sale
           total is authoritative.
         </p>
+        <OtherReportItems
+          key={report.artist.id + report.month}
+          report={report}
+          busy={busy || !period}
+          saved={saved}
+          onChange={onOtherLines}
+          onEditingChange={setEditingOther}
+        />
         {messages}
-        <div className="statement-footer">{actions}</div>
+        {editingOther && (
+          <p className="small-note">
+            Apply or cancel this item before saving or sending the report.
+          </p>
+        )}
+        <fieldset
+          className="statement-footer"
+          style={{ border: 0, padding: 0, margin: 0 }}
+          disabled={editingOther}
+        >
+          {actions}
+        </fieldset>
       </div>
     </section>
   );

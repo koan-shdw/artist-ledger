@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import MonthlySales, { NumberEdit } from "./monthly-sales";
 import InlineArtistField from "./inline-artist-field";
+import GmailSettings, { type EmailStatus } from "./gmail-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -112,6 +113,11 @@ export default function LedgerApp({
     [sendTargets, setSendTargets] = useState<string[] | null>(null),
     [setupOpen, setSetupOpen] = useState(false),
     [emailReady, setEmailReady] = useState(false),
+    [gmailStatus, setGmailStatus] = useState<EmailStatus>({
+      gmailEmail: null,
+      gmailConfigured: false,
+      emailReady: false,
+    }),
     [shop, setShop] = useState(""),
     [latestRun, setLatestRun] = useState<{
       status: string;
@@ -127,6 +133,8 @@ export default function LedgerApp({
       sent: Sent[];
       demo: boolean;
       emailReady: boolean;
+      gmailEmail: string | null;
+      gmailConfigured: boolean;
       shop: string;
       latestRun?: { status: string; result: string; month: string };
     };
@@ -136,6 +144,11 @@ export default function LedgerApp({
     setSent(v.sent || []);
     setDemo(!!v.demo);
     setEmailReady(!!v.emailReady);
+    setGmailStatus({
+      gmailEmail: v.gmailEmail,
+      gmailConfigured: v.gmailConfigured,
+      emailReady: v.emailReady,
+    });
     setShop(v.shop || "");
     setLatestRun(v.latestRun ?? null);
     setLoaded(true);
@@ -1257,6 +1270,15 @@ export default function LedgerApp({
             <div className="settings-grid">
               <section className="settings-card">
                 <h2>Gallery & calculation</h2>
+                <GmailSettings
+                  endpoint={endpoint}
+                  status={gmailStatus}
+                  disabled={demo || busy}
+                  onStatus={(status) => {
+                    setGmailStatus(status);
+                    setEmailReady(status.emailReady);
+                  }}
+                />
                 <Label htmlFor="gallery">Gallery name</Label>
                 <Input
                   id="gallery"
@@ -1379,8 +1401,8 @@ export default function LedgerApp({
                   {demo
                     ? "Automatic sending is disabled in the demo."
                     : emailReady
-                      ? "Email provider is configured. The hosting scheduler must run the monthly job."
-                      : "Email delivery requires the email provider and verified sender to be configured on your app server."}
+                      ? "Email sending is connected. Automatic monthly reports use the configured scheduler."
+                      : "Connect Gmail above to send artist reports."}
                 </div>
                 <p>
                   Automatic reports use saved artist and item selections.
@@ -1619,6 +1641,24 @@ export default function LedgerApp({
           busy={busy}
           onBack={() => setDetail(null)}
           onAdjust={adjustStatement}
+          onOtherLines={(lines) => {
+            if (!period) return;
+            change({
+              ...data,
+              months: {
+                ...data.months,
+                [month]: {
+                  ...period,
+                  otherLines: [
+                    ...(period.otherLines ?? []).filter(
+                      (line) => line.artistId !== detail,
+                    ),
+                    ...lines,
+                  ],
+                },
+              },
+            });
+          }}
           artistFields={
             savedReport ? (
               <p>
@@ -1685,8 +1725,8 @@ export default function LedgerApp({
               )}
               {!emailReady && (
                 <p className="small-note">
-                  Email sender setup is required before sending. You can save
-                  the draft and export PDF.
+                  Connect Gmail in Settings before sending. You can save the
+                  draft and export PDF.
                 </p>
               )}
             </>
@@ -1768,7 +1808,7 @@ export default function LedgerApp({
           )}
           {!demo && !emailReady && (
             <div className="message error">
-              Configure your email provider before sending.
+              Connect Gmail in Settings before sending.
             </div>
           )}
           <Button

@@ -6,7 +6,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { money, monthLabel, type Report } from "./ledger";
+import { money, monthLabel, otherLineText, type Report } from "./ledger";
 
 export type PdfStatement = { report: Report; saved?: boolean };
 
@@ -178,20 +178,30 @@ export async function statementPdf(
         `Adjustment - ${line.order}: ${line.title}. Sale ${money(line.originalNet ?? line.net, current.currency)} to ${money(line.net, current.currency)}; cost ${money(line.originalCost ?? line.cost, current.currency)} to ${money(line.cost, current.currency)}; gallery ${(line.galleryBps ?? current.artist.galleryBps) ? (line.galleryBps ?? current.artist.galleryBps) / 100 : 0}%.${line.note ? " Note: " + line.note : ""}`,
       );
     }
+    if (current.otherLines?.length) {
+      paragraph("Other report items");
+      for (const line of current.otherLines)
+        paragraph(otherLineText(line, current.currency));
+    }
     const varyingRates = current.lines.some(
       (l) =>
         l.galleryBps !== undefined &&
         l.galleryBps !== current.artist.galleryBps,
     );
-    ensure(155);
+    ensure(185);
     y -= 8;
     const summary = (label: string, value: string, size = 11) => {
       text(label, left, size);
       aligned(value, right, size);
       y -= 24;
     };
-    summary("Net product sales", money(current.net, current.currency));
-    summary("Product costs", money(current.cost, current.currency));
+    summary("Shopify net product sales", money(current.net, current.currency));
+    summary("Shopify product costs", money(current.cost, current.currency));
+    if (current.otherLines?.length)
+      summary(
+        "Other items total",
+        money(current.otherTotal ?? 0, current.currency),
+      );
     summary(
       current.artist.agreementConfigured === false
         ? "Gallery share"

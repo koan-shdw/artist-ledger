@@ -64,7 +64,9 @@ For distribution beyond your organization, use the [Partner Dashboard distributi
 
 ### 6. Configure email
 
-This version sends through Resend. Configure a sender domain you control, verify its DNS records, then set:
+For Gmail, complete the [one-time Google OAuth setup](gmail-setup.md) for your hosted app. Merchants then open **Settings → Connect Gmail** and authorize their own sending account. Each store has its own connection, with reconnect and disconnect controls. Gmail reports include PDF attachments.
+
+Alternatively, configure Resend with a sender domain you control, verify its DNS records, then set:
 
 ```sh
 npx wrangler secret put RESEND_API_KEY

@@ -1,5 +1,6 @@
 import db from "../db.server";
 import { randomUUID } from "node:crypto";
+import { gmailConfigured, sendGmail } from "./gmail.server";
 import {
   type Ledger,
   type Report,
@@ -16,10 +17,12 @@ export async function sendReports(
   manual?: { from: string; to: string; version: number },
   pdf?: string,
 ) {
-  if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM)
-    throw Error(
-      "Configure RESEND_API_KEY and EMAIL_FROM before sending reports",
-    );
+  const gmail = await db.gmail.connection(shop);
+  if (
+    !(gmail && gmailConfigured()) &&
+    (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM)
+  )
+    throw Error("Connect Gmail in Settings before sending reports");
   if (
     pdf !== undefined &&
     (pdf.length > 8_000_000 ||
@@ -53,6 +56,23 @@ export async function sendReports(
       },
     });
     if (!row) {
+      let reportPdf = pdf;
+      if (gmail && !reportPdf) {
+        const { statementPdf } = await import("./statement-pdf");
+        const font = await fetch(
+          new URL("/fonts/NotoSansJP-Regular.ttf", process.env.SHOPIFY_APP_URL),
+          { signal: AbortSignal.timeout(15000) },
+        );
+        if (!font.ok) throw Error("Could not load the PDF font");
+        reportPdf = Buffer.from(
+          await statementPdf(
+            [{ report: draft, saved: true }],
+            new Uint8Array(await font.arrayBuffer()),
+          ),
+        ).toString("base64");
+        if (reportPdf && reportPdf.length > 8_000_000)
+          throw Error("Report PDF exceeds the supported attachment size");
+      }
       try {
         row = await db.artistReport.create({
           data: {
@@ -60,9 +80,13 @@ export async function sendReports(
             shop,
             month,
             artistId: draft.artist.id,
-            snapshot: JSON.stringify(pdf ? { ...draft, hasPdf: true } : draft),
+            snapshot: JSON.stringify({
+              ...draft,
+              ...(reportPdf ? { hasPdf: true } : {}),
+              deliveryProvider: gmail ? "gmail" : "resend",
+            }),
             status: "pending",
-            ...(pdf ? { pdf } : {}),
+            ...(reportPdf ? { pdf: reportPdf } : {}),
           },
         });
       } catch (e) {
@@ -94,38 +118,52 @@ export async function sendReports(
         ? await db.artistReport.pdf(row.id, shop)
         : undefined;
       if (r.hasPdf && !attachment) throw Error("Saved PDF is unavailable");
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-          "Content-Type": "application/json",
-          "Idempotency-Key": row.id,
-        },
-        body: JSON.stringify({
-          from: process.env.EMAIL_FROM,
-          to: [r.artist.email],
-          ...(r.replyTo ? { reply_to: r.replyTo } : {}),
+      let providerId: string;
+      if (r.deliveryProvider === "gmail") {
+        providerId = await sendGmail(shop, {
+          id: row.id,
+          to: r.artist.email,
+          replyTo: r.replyTo,
           subject: `${r.galleryName} — ${monthLabel(r.month)} artist sales statement`,
           text: reportText(r),
-          ...(attachment
-            ? {
-                attachments: [
-                  {
-                    filename: `artist-statement-${r.month.replaceAll("..", "-to-")}.pdf`,
-                    content: attachment,
-                  },
-                ],
-              }
-            : {}),
-        }),
-        signal: AbortSignal.timeout(20000),
-      });
-      const result = (await response.json()) as { id?: string };
-      if (!response.ok || !result.id)
-        throw Error(`Email provider returned ${response.status}`);
+          pdf: attachment,
+          filename: `artist-statement-${r.month.replaceAll("..", "-to-")}.pdf`,
+        });
+      } else {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            "Content-Type": "application/json",
+            "Idempotency-Key": row.id,
+          },
+          body: JSON.stringify({
+            from: process.env.EMAIL_FROM,
+            to: [r.artist.email],
+            ...(r.replyTo ? { reply_to: r.replyTo } : {}),
+            subject: `${r.galleryName} — ${monthLabel(r.month)} artist sales statement`,
+            text: reportText(r),
+            ...(attachment
+              ? {
+                  attachments: [
+                    {
+                      filename: `artist-statement-${r.month.replaceAll("..", "-to-")}.pdf`,
+                      content: attachment,
+                    },
+                  ],
+                }
+              : {}),
+          }),
+          signal: AbortSignal.timeout(20000),
+        });
+        const result = (await response.json()) as { id?: string };
+        if (!response.ok || !result.id)
+          throw Error(`Email provider returned ${response.status}`);
+        providerId = result.id;
+      }
       await db.artistReport.update({
         where: { id: row.id },
-        data: { status: "sent", providerId: result.id, error: null },
+        data: { status: "sent", providerId, error: null },
       });
       sent++;
     } catch (e) {
@@ -134,7 +172,9 @@ export async function sendReports(
         data: { status: "uncertain", error: (e as Error).message },
       });
       failures.push(
-        `${r.artist.name}: delivery not confirmed. Retry within 23 hours; the same message ID prevents duplicates.`,
+        r.deliveryProvider === "gmail"
+          ? `${r.artist.name}: Gmail delivery not confirmed. ${(e as Error).message}`
+          : `${r.artist.name}: delivery not confirmed. Retry within 23 hours; the same message ID prevents duplicates.`,
       );
     }
   }

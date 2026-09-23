@@ -6,6 +6,9 @@ interface WorkerEnv {
   SCOPES: string;
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GMAIL_TOKEN_KEY?: string;
   CRON_SECRET: string;
 }
 declare namespace Cloudflare {

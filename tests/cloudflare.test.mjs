@@ -17,7 +17,8 @@ test("D1 persistence, concurrency, sessions, reports, and shop erasure", async (
     const binding = await mf.getD1Database("DB");
     const migration =
       (await readFile("migrations/0001_initial.sql", "utf8")) +
-      (await readFile("migrations/0002_report_pdf.sql", "utf8"));
+      (await readFile("migrations/0002_report_pdf.sql", "utf8")) +
+      (await readFile("migrations/0003_gmail.sql", "utf8"));
     await binding.batch(
       migration
         .split(";")
@@ -26,6 +27,40 @@ test("D1 persistence, concurrency, sessions, reports, and shop erasure", async (
         .map((s) => binding.prepare(s)),
     );
     const db = createDatabase(() => binding);
+    await db.gmail.connect(
+      "one.myshopify.com",
+      "one@example.com",
+      "encrypted-one",
+    );
+    await db.gmail.connect(
+      "two.myshopify.com",
+      "two@example.com",
+      "encrypted-two",
+    );
+    assert.equal(
+      (await db.gmail.connection("two.myshopify.com")).email,
+      "two@example.com",
+    );
+    await db.gmail.begin(
+      "state",
+      "one.myshopify.com",
+      Date.now() + 60000,
+      "verifier",
+    );
+    assert.equal(
+      (await db.gmail.bindBrowser("state", "browser")).shop,
+      "one.myshopify.com",
+    );
+    assert.equal(await db.gmail.bindBrowser("state", "other-browser"), null);
+    assert.equal(await db.gmail.consume("state", "wrong-browser"), null);
+    assert.equal(
+      (await db.gmail.consume("state", "browser")).verifier,
+      "verifier",
+    );
+    assert.equal(await db.gmail.consume("state", "browser"), null);
+    assert.equal(await db.gmail.claim("delivery", "one.myshopify.com"), true);
+    await db.gmail.release("delivery", "two.myshopify.com");
+    assert.equal(await db.gmail.claim("delivery", "one.myshopify.com"), false);
     const storage = new D1SessionStorage(() => binding);
     const args = (shop) => ({
       where: { shop },

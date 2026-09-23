@@ -6,8 +6,13 @@ import { type Ledger } from "../lib/ledger";
 import { getWorkspace, parseEdits, saveWorkspace } from "../lib/store.server";
 import { continueSync } from "../lib/sync-job.server";
 import { sendReports } from "../lib/email.server";
+import { emailStatus, beginGmail, disconnectGmail } from "../lib/gmail.server";
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
+  if (new URL(request.url).searchParams.has("emailStatus"))
+    return Response.json(await emailStatus(session.shop), {
+      headers: { "Cache-Control": "no-store" },
+    });
   const pdfMonth = new URL(request.url).searchParams.get("pdfMonth");
   const pdfArtist = new URL(request.url).searchParams.get("pdfArtist");
   if (pdfMonth && pdfArtist) {
@@ -48,7 +53,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     version: row.version,
     demo: false,
     shop: session.shop,
-    emailReady: !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+    ...(await emailStatus(session.shop)),
     sent: reports.map((r) => {
       const snapshot = JSON.parse(r.snapshot);
       return { ...r, snapshot, hasPdf: !!snapshot.hasPdf };
@@ -60,8 +65,16 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const body = z
       .object({
-        action: z.enum(["save", "sync", "send", "sendManual", "sendStatement"]),
-        version: z.number().int().min(0),
+        action: z.enum([
+          "save",
+          "sync",
+          "send",
+          "sendManual",
+          "sendStatement",
+          "connectGmail",
+          "disconnectGmail",
+        ]),
+        version: z.number().int().min(0).optional(),
         month: z
           .string()
           .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
@@ -76,6 +89,12 @@ export async function action({ request }: ActionFunctionArgs) {
         jobId: z.string().uuid().optional(),
       })
       .parse(await request.json());
+    if (body.action === "connectGmail")
+      return Response.json({ url: await beginGmail(session.shop) });
+    if (body.action === "disconnectGmail") {
+      await disconnectGmail(session.shop);
+      return Response.json({ message: "Gmail disconnected" });
+    }
     const row = await getWorkspace(session.shop);
     if (body.version !== row.version)
       throw Error("The workspace changed. Reload before continuing.");
@@ -93,6 +112,21 @@ export async function action({ request }: ActionFunctionArgs) {
         ) as import("../lib/ledger").Report;
         const before = data.months[report.month],
           after = next.months[report.month];
+        if (
+          JSON.stringify(
+            (before?.otherLines ?? []).filter(
+              (line) => line.artistId === report.artistId,
+            ),
+          ) !==
+          JSON.stringify(
+            (after?.otherLines ?? []).filter(
+              (line) => line.artistId === report.artistId,
+            ),
+          )
+        )
+          throw Error(
+            "This statement is saved for delivery. Its other report items are locked.",
+          );
         for (const line of before?.lines ?? []) {
           const artistId = data.products.find(
             (p) => p.id === line.productId,
