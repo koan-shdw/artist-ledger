@@ -121,3 +121,11 @@ In Monthly sales, choose All artists or an individual artist, then a single mont
 Save adjustments, then select Create manual report. Review recipient emails and amounts, export their PDF statements, or send individual itemised emails. Email delivery requires a configured sender. Each report covers the full selected date range. Missing costs, agreements, email addresses, incomplete imports and negative balances block sending.
 
 Manual delivery uses separate immutable snapshots and deduplication keys from automatic monthly statements. Repeating the same range and saved workspace version skips already-sent recipients. A changed saved workspace version permits a new manual statement. Automatic monthly selection is independent of manual recipient selection.
+
+## Final review of a monthly statement
+
+Open an artist in Monthly reports to edit each included sale's amount, total cost, gallery percentage and note. Blue values are defaults. Save stores the draft; Send report saves pending edits, generates an itemised PDF in the browser and emails it to the saved artist address. This individual send does not require enabling automatic reports. Sender configuration and valid report data are required.
+
+The individual statement send stores the exact PDF with the immutable report. Retries use the same attachment and message ID, and Download PDF retrieves that saved file. Attachments are capped at 8 MB of base64 data and stored in chunks within D1. Apply all database migrations when upgrading. Existing automatic and bulk text-email workflows remain available.
+
+Click an email or percentage in the artist table, or Set percentage in Monthly reports, to edit the value in the cell. Enter or Save persists it; Cancel leaves it unchanged. Saving an inline artist setting also saves other pending workspace edits.

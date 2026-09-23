@@ -15,7 +15,9 @@ test("D1 persistence, concurrency, sessions, reports, and shop erasure", async (
   });
   try {
     const binding = await mf.getD1Database("DB");
-    const migration = await readFile("migrations/0001_initial.sql", "utf8");
+    const migration =
+      (await readFile("migrations/0001_initial.sql", "utf8")) +
+      (await readFile("migrations/0002_report_pdf.sql", "utf8"));
     await binding.batch(
       migration
         .split(";")
@@ -95,6 +97,7 @@ test("D1 persistence, concurrency, sessions, reports, and shop erasure", async (
       123,
     );
     const report = {
+      pdf: "x".repeat(1_200_000),
       id: "report1",
       shop: "one.myshopify.com",
       month: "2026-08",
@@ -109,6 +112,11 @@ test("D1 persistence, concurrency, sessions, reports, and shop erasure", async (
     await assert.rejects(
       db.artistReport.create({ data: { ...report, id: "report2" } }),
     );
+    assert.equal(
+      await db.artistReport.pdf("report1", "one.myshopify.com"),
+      report.pdf,
+    );
+    assert.equal(await db.artistReport.pdf("report1", "two.myshopify.com"), "");
     await db.artistReport.update({
       where: { id: "report1" },
       data: { status: "sent", providerId: "test", error: null },
@@ -124,6 +132,10 @@ test("D1 persistence, concurrency, sessions, reports, and shop erasure", async (
       0,
     );
     await db.deleteShop("one.myshopify.com");
+    assert.equal(
+      (await binding.prepare("SELECT count(*) AS n FROM ReportPdf").first()).n,
+      0,
+    );
     assert.equal(await storage.loadSession("offline_one"), undefined);
     assert.ok(await storage.loadSession("online_two"));
     assert.equal((await db.galleryWorkspace.findMany()).length, 1);

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import MonthlySales from "./monthly-sales";
+import MonthlySales, { NumberEdit } from "./monthly-sales";
+import InlineArtistField from "./inline-artist-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -213,14 +214,105 @@ export default function LedgerApp({
       setBusy(false);
     }
   }
+  async function persist(next = data) {
+    const result = await call("save", { data: next });
+    setData(next);
+    setVersion(result.version);
+    setDirty(false);
+    setNotice("Changes saved");
+    return result.version;
+  }
   async function save() {
     try {
-      const result = await call("save", { data });
-      setVersion(result.version);
-      setDirty(false);
-      setNotice("Changes saved");
+      await persist();
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+  function artistField(
+    artist: Artist,
+    field: "email" | "galleryBps",
+    placeholder: string,
+  ) {
+    return (
+      <InlineArtistField
+        value={
+          field === "email"
+            ? artist.email
+            : artist.agreementConfigured === false
+              ? ""
+              : String(artist.galleryBps / 100)
+        }
+        label={
+          (field === "email" ? "Email for " : "Gallery percentage for ") +
+          artist.name
+        }
+        placeholder={placeholder}
+        percentage={field === "galleryBps"}
+        disabled={busy || !loaded}
+        onSave={async (value) => {
+          await persist({
+            ...data,
+            artists: data.artists.map((a) =>
+              a.id === artist.id
+                ? {
+                    ...a,
+                    ...(field === "email"
+                      ? { email: value }
+                      : {
+                          galleryBps: Math.round(Number(value) * 100),
+                          agreementConfigured: true,
+                        }),
+                  }
+                : a,
+            ),
+          });
+        }}
+      />
+    );
+  }
+  function adjustStatement(
+    id: string,
+    patch: import("@/lib/ledger").SaleAdjustment | null,
+  ) {
+    const period = data.months[month];
+    if (!period) return;
+    const adjustments = { ...period.adjustments };
+    if (patch === null) delete adjustments[id];
+    else adjustments[id] = { ...adjustments[id], ...patch };
+    change({
+      ...data,
+      months: { ...data.months, [month]: { ...period, adjustments } },
+    });
+  }
+  async function sendStatement() {
+    if (!viewed) return;
+    try {
+      const nextVersion = dirty ? await persist() : version;
+      setBusy(true);
+      setError("");
+      const { statementPdf } = await import("@/lib/statement-pdf");
+      const font = await fetch("/fonts/NotoSansJP-Regular.ttf");
+      if (!font.ok) throw Error("Could not load the PDF font");
+      const bytes = await statementPdf(
+        [{ report: viewed, saved: true }],
+        new Uint8Array(await font.arrayBuffer()),
+      );
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 8192)
+        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      const result = await call("sendStatement", {
+        month,
+        artistIds: [viewed.artist.id],
+        pdf: btoa(binary),
+        version: nextVersion,
+      });
+      await refresh();
+      setNotice(result.message);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
   async function sync() {
@@ -263,6 +355,23 @@ export default function LedgerApp({
     setBusy(true);
     setError("");
     try {
+      const saved =
+        items.length === 1 && !manual ? getSent(items[0].artist.id) : undefined;
+      if (saved?.hasPdf) {
+        const response = await fetch(
+          endpoint +
+            "?" +
+            new URLSearchParams({ pdfMonth: month, pdfArtist: saved.artistId }),
+        );
+        if (!response.ok) throw Error("Could not download the saved PDF");
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "artist-statement-" + month + ".pdf";
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
       const { statementPdf } = await import("@/lib/statement-pdf");
       const response = await fetch("/fonts/NotoSansJP-Regular.ttf");
       if (!response.ok) throw Error("Could not load the PDF font. Try again.");
@@ -753,23 +862,35 @@ export default function LedgerApp({
                             </span>
                             <span>
                               <strong>{r.artist.name}</strong>
-                              <small>{r.artist.email || "Email needed"}</small>
+                              <small>{r.artist.email || ""}</small>
                             </span>
                           </button>
+                          {!r.artist.email &&
+                            artistField(
+                              data.artists.find((a) => a.id === r.artist.id)!,
+                              "email",
+                              "Add email",
+                            )}
                         </td>
                         <td>{r.units}</td>
                         <td>{fmt(r.net)}</td>
                         <td>{fmt(r.cost)}</td>
                         <td>
                           <span className="split-label">
-                            {r.artist.agreementConfigured === false
-                              ? "Set percentage"
-                              : `${r.artist.galleryBps / 100}%`}
+                            {artistField(
+                              data.artists.find((a) => a.id === r.artist.id)!,
+                              "galleryBps",
+                              "Set percentage",
+                            )}
                           </span>
                         </td>
                         <td className="earnings">
                           {r.artist.agreementConfigured === false
-                            ? "Set percentage"
+                            ? artistField(
+                                data.artists.find((a) => a.id === r.artist.id)!,
+                                "galleryBps",
+                                "Set percentage",
+                              )
                             : fmt(r.payout)}
                         </td>
                         <td>
@@ -925,11 +1046,9 @@ export default function LedgerApp({
                             <strong>{a.name}</strong>
                           </div>
                         </td>
-                        <td>{a.email || "Add an email"}</td>
+                        <td>{artistField(a, "email", "Add email")}</td>
                         <td>
-                          {a.agreementConfigured === false
-                            ? "Set gallery percentage"
-                            : `${a.galleryBps / 100}%`}{" "}
+                          {artistField(a, "galleryBps", "Set gallery %")}{" "}
                           <span className="muted">
                             {a.agreementConfigured === false
                               ? ""
@@ -1494,11 +1613,11 @@ export default function LedgerApp({
                   <b>{money(viewed.payout, viewed.currency)}</b>
                 </div>
               </div>
-              <h3>Included items</h3>
+              <h3>Sales items</h3>
               <p className="small-note">
                 {savedReport
                   ? "This saved statement keeps its original items and amounts."
-                  : "Choose which sales items appear on this month’s report."}
+                  : "Review each sale, adjust its figures, then save or send the final report. Blue amounts use the defaults."}
               </p>
               {(savedReport
                 ? viewed.lines
@@ -1510,52 +1629,158 @@ export default function LedgerApp({
               ).map((l) => {
                 const p = data.products.find((p) => p.id === l.productId);
                 const effective = viewed.lines.find((row) => row.id === l.id);
+                const edit = period?.adjustments?.[l.id];
+                const unit = minorUnits(viewed.currency);
                 return (
-                  <label className="item-choice" key={l.id}>
-                    <Checkbox
-                      disabled={!!savedReport || !p?.included}
-                      checked={
-                        !!savedReport ||
-                        (!!p?.included && !period?.excluded.includes(l.id))
-                      }
-                      onCheckedChange={(v) => {
-                        if (!period) return;
-                        change({
-                          ...data,
-                          months: {
-                            ...data.months,
-                            [month]: {
-                              ...period,
-                              excluded:
-                                v === true
-                                  ? period.excluded.filter((id) => id !== l.id)
-                                  : [...new Set([...period.excluded, l.id])],
+                  <div className="statement-sale" key={l.id}>
+                    <div className="item-choice">
+                      <Checkbox
+                        disabled={!!savedReport || !p?.included}
+                        checked={
+                          !!savedReport ||
+                          (!!p?.included && !period?.excluded.includes(l.id))
+                        }
+                        onCheckedChange={(v) => {
+                          if (!period) return;
+                          change({
+                            ...data,
+                            months: {
+                              ...data.months,
+                              [month]: {
+                                ...period,
+                                excluded:
+                                  v === true
+                                    ? period.excluded.filter(
+                                        (id) => id !== l.id,
+                                      )
+                                    : [...new Set([...period.excluded, l.id])],
+                              },
                             },
-                          },
-                        });
-                      }}
-                    />
-                    <div>
-                      <strong>{l.title}</strong>
-                      <span>
-                        {l.quantity} units · {l.order}
-                        {!p?.included && !savedReport
-                          ? " · Product excluded"
-                          : ""}
-                      </span>
+                          });
+                        }}
+                      />
+                      <div>
+                        <strong>{l.title}</strong>
+                        <span>
+                          {l.quantity} units · {l.order}
+                          {!p?.included && !savedReport
+                            ? " · Product excluded"
+                            : ""}
+                        </span>
+                      </div>
+                      <b>
+                        {money(effective?.net ?? l.net, viewed.currency)}
+                        {effective?.adjusted && (
+                          <small style={{ display: "block" }}>
+                            Adjusted · gallery{" "}
+                            {(effective.galleryBps ??
+                              viewed.artist.galleryBps) / 100}
+                            %{effective.note ? ` · ${effective.note}` : ""}
+                          </small>
+                        )}
+                      </b>
                     </div>
-                    <b>
-                      {money(effective?.net ?? l.net, viewed.currency)}
-                      {effective?.adjusted && (
-                        <small style={{ display: "block" }}>
-                          Adjusted · gallery{" "}
-                          {(effective.galleryBps ?? viewed.artist.galleryBps) /
-                            100}
-                          %{effective.note ? ` · ${effective.note}` : ""}
-                        </small>
-                      )}
-                    </b>
-                  </label>
+                    {!savedReport && (
+                      <div className="statement-sale-fields">
+                        <label>
+                          Sale amount
+                          <NumberEdit
+                            label={"Sale amount for " + l.order + " " + l.title}
+                            disabled={busy}
+                            value={
+                              edit?.net === undefined
+                                ? undefined
+                                : edit.net / unit
+                            }
+                            defaultValue={l.net / unit}
+                            onChange={(v) =>
+                              adjustStatement(l.id, {
+                                net:
+                                  v === undefined
+                                    ? undefined
+                                    : Math.round(v * unit),
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Total cost
+                          <NumberEdit
+                            label={"Total cost for " + l.order + " " + l.title}
+                            disabled={busy}
+                            value={
+                              edit?.cost === undefined
+                                ? undefined
+                                : edit.cost / unit
+                            }
+                            defaultValue={
+                              p?.unitCost == null
+                                ? undefined
+                                : (p.unitCost * l.quantity) / unit
+                            }
+                            onChange={(v) =>
+                              adjustStatement(l.id, {
+                                cost:
+                                  v === undefined
+                                    ? undefined
+                                    : Math.round(v * unit),
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Gallery %
+                          <NumberEdit
+                            label={
+                              "Gallery percentage for " +
+                              l.order +
+                              " " +
+                              l.title
+                            }
+                            percentage
+                            disabled={busy}
+                            value={
+                              edit?.galleryBps === undefined
+                                ? undefined
+                                : edit.galleryBps / 100
+                            }
+                            defaultValue={
+                              viewed.artist.agreementConfigured === false
+                                ? undefined
+                                : viewed.artist.galleryBps / 100
+                            }
+                            onChange={(v) =>
+                              adjustStatement(l.id, {
+                                galleryBps:
+                                  v === undefined
+                                    ? undefined
+                                    : Math.round(v * 100),
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="statement-note">
+                          Adjustment note
+                          <Input
+                            aria-label={"Note for " + l.order + " " + l.title}
+                            maxLength={1000}
+                            disabled={busy}
+                            value={edit?.note ?? ""}
+                            onChange={(e) =>
+                              adjustStatement(l.id, { note: e.target.value })
+                            }
+                          />
+                        </label>
+                        <Button
+                          variant="ghost"
+                          disabled={busy || !edit}
+                          onClick={() => adjustStatement(l.id, null)}
+                        >
+                          Reset
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
               {viewed.errors.length > 0 && !savedReport && (
@@ -1567,21 +1792,46 @@ export default function LedgerApp({
                   reporting. No invoice is due.
                 </div>
               )}
+              {error && (
+                <div role="alert" className="message error">
+                  {error}
+                </div>
+              )}
+              {notice && (
+                <div role="status" className="message success">
+                  {notice}
+                </div>
+              )}
+              {!emailReady && (
+                <p className="small-note">
+                  Email sender setup is required before sending. You can save
+                  the draft and export PDF.
+                </p>
+              )}
               <div className="sheet-actions">
+                {!savedReport && (
+                  <Button
+                    variant="outline"
+                    onClick={save}
+                    disabled={busy || !loaded || !dirty}
+                  >
+                    <Save /> Save
+                  </Button>
+                )}
                 <Button
+                  onClick={sendStatement}
                   disabled={
                     busy ||
-                    dirty ||
-                    !viewed.artist.enabled ||
-                    (!!savedReport && savedReport.status === "sent")
+                    !loaded ||
+                    !emailReady ||
+                    demo ||
+                    viewed.errors.length > 0 ||
+                    viewed.payout < 0 ||
+                    savedReport?.status === "sent"
                   }
-                  onClick={() => {
-                    setSendTargets([viewed.artist.id]);
-                    setDetail(null);
-                    setSendOpen(true);
-                  }}
                 >
-                  <Mail /> Review & send to artist
+                  <Mail />{" "}
+                  {savedReport?.status === "sent" ? "Sent" : "Send report"}
                 </Button>
                 <Button
                   variant="outline"
@@ -1590,11 +1840,6 @@ export default function LedgerApp({
                 >
                   <Download /> Download PDF
                 </Button>
-                {dirty && (
-                  <Button onClick={save} disabled={busy || !loaded}>
-                    Save selections
-                  </Button>
-                )}
               </div>
             </>
           )}

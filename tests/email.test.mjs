@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {demoLedger} from '../app/lib/ledger.ts';
 const rows=[];let requests=[];let fail=false;
-globalThis.__ledgerTestDb={artistReport:{async findUnique({where}){const k=where.shop_month_artistId;return rows.find(r=>r.shop===k.shop&&r.month===k.month&&r.artistId===k.artistId)||null},async create({data}){if(rows.some(r=>r.shop===data.shop&&r.month===data.month&&r.artistId===data.artistId))throw Error('Duplicate');const row={...data,createdAt:new Date()};rows.push(row);return row},async update({where,data}){const row=rows.find(r=>r.id===where.id);Object.assign(row,data);return row}}};
+globalThis.__ledgerTestDb={artistReport:{async pdf(id,shop){return rows.find(r=>r.id===id&&r.shop===shop)?.pdf || ""},async findUnique({where}){const k=where.shop_month_artistId;return rows.find(r=>r.shop===k.shop&&r.month===k.month&&r.artistId===k.artistId)||null},async create({data}){if(rows.some(r=>r.shop===data.shop&&r.month===data.month&&r.artistId===data.artistId))throw Error('Duplicate');const row={...data,createdAt:new Date()};rows.push(row);return row},async update({where,data}){const row=rows.find(r=>r.id===where.id);Object.assign(row,data);return row}}};
 process.env.RESEND_API_KEY='test-only';process.env.EMAIL_FROM='test@example.com';
 globalThis.fetch=async(url,options)=>{requests.push({url,options,body:JSON.parse(options.body)});if(fail)throw Error('Simulated network failure');return Response.json({id:'mock-'+options.headers['Idempotency-Key']})};
 const {sendReports}=await import('./.generated/email.mjs');
@@ -21,4 +21,19 @@ test('manual ranges are independent of monthly delivery and retry without duplic
  assert.equal(JSON.parse(rows[1].snapshot).lines.length, d.months['2026-07'].lines.filter(l=>d.products.find(p=>p.id===l.productId)?.artistId==='a0'&&d.products.find(p=>p.id===l.productId)?.included&&!d.months['2026-07'].excluded.includes(l.id)).length+JSON.parse(rows[0].snapshot).lines.length);
  assert.equal((await sendReports('one.myshopify.com',d,'2026-07',['a0'],context)).skipped,1);
  assert.equal(requests.length,2);
+});
+
+test('statement delivery stores the PDF and reuses the identical attachment on retry',async()=>{
+ rows.length=0;requests=[];fail=true;const d=demoLedger();d.artists[0].enabled=false;
+ const {PDFDocument}=await import('pdf-lib');const doc=await PDFDocument.create();doc.addPage();
+ const pdf=Buffer.from(await doc.save()).toString('base64');
+ await sendReports('one.myshopify.com',d,'2026-08',['a0'],undefined,pdf);
+ assert.equal(rows[0].status,'uncertain');assert.equal(JSON.parse(rows[0].snapshot).hasPdf,true);assert.equal(rows[0].pdf,pdf);
+ assert.equal(requests[0].body.attachments[0].content,pdf);
+ assert.match(requests[0].body.attachments[0].filename,/2026-08\.pdf$/);
+ fail=false;d.artists[0].galleryBps=9000;
+ await sendReports('one.myshopify.com',d,'2026-08',['a0'],undefined,pdf);
+ assert.deepEqual(requests[1].body,requests[0].body);assert.equal(rows[0].status,'sent');
+ assert.equal((await sendReports('one.myshopify.com',d,'2026-08',['a0'],undefined,pdf)).skipped,1);
+ await assert.rejects(sendReports('one.myshopify.com',d,'2026-08',['a0'],undefined,'invalid'),/Invalid PDF/);
 });

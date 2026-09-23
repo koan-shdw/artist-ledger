@@ -14,11 +14,19 @@ export async function sendReports(
   month: string,
   artistIds: string[],
   manual?: { from: string; to: string; version: number },
+  pdf?: string,
 ) {
   if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM)
     throw Error(
       "Configure RESEND_API_KEY and EMAIL_FROM before sending reports",
     );
+  if (
+    pdf !== undefined &&
+    (pdf.length > 8_000_000 ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(pdf) ||
+      !Buffer.from(pdf, "base64").subarray(0, 5).equals(Buffer.from("%PDF-")))
+  )
+    throw Error("Invalid PDF attachment or PDF exceeds the supported size");
   const unique = [...new Set(artistIds)];
   if (!unique.length || unique.length > 500)
     throw Error("Select between 1 and 500 artists");
@@ -26,7 +34,7 @@ export async function sendReports(
     const r = manual
       ? rangeReport(data, manual.from, manual.to, id)
       : reportFor(data, month, id);
-    if (!manual && !r.artist.enabled)
+    if (!manual && !pdf && !r.artist.enabled)
       throw Error(`${r.artist.name} is not selected for reports`);
     if (r.errors.length)
       throw Error(`${r.artist.name}: ${r.errors.join("; ")}`);
@@ -52,8 +60,9 @@ export async function sendReports(
             shop,
             month,
             artistId: draft.artist.id,
-            snapshot: JSON.stringify(draft),
+            snapshot: JSON.stringify(pdf ? { ...draft, hasPdf: true } : draft),
             status: "pending",
+            ...(pdf ? { pdf } : {}),
           },
         });
       } catch (e) {
@@ -65,6 +74,10 @@ export async function sendReports(
         if (!row) throw e;
       }
     }
+    if (pdf && !JSON.parse(row.snapshot).hasPdf && row.status !== "sent")
+      throw Error(
+        "This delivery was already prepared without a PDF. Reconcile the original delivery before sending again.",
+      );
     if (row.status === "sent") {
       skipped++;
       continue;
@@ -77,6 +90,10 @@ export async function sendReports(
     }
     const r = JSON.parse(row.snapshot) as Report;
     try {
+      const attachment = r.hasPdf
+        ? await db.artistReport.pdf(row.id, shop)
+        : undefined;
+      if (r.hasPdf && !attachment) throw Error("Saved PDF is unavailable");
       const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -90,6 +107,16 @@ export async function sendReports(
           ...(r.replyTo ? { reply_to: r.replyTo } : {}),
           subject: `${r.galleryName} — ${monthLabel(r.month)} artist sales statement`,
           text: reportText(r),
+          ...(attachment
+            ? {
+                attachments: [
+                  {
+                    filename: `artist-statement-${r.month.replaceAll("..", "-to-")}.pdf`,
+                    content: attachment,
+                  },
+                ],
+              }
+            : {}),
         }),
         signal: AbortSignal.timeout(20000),
       });

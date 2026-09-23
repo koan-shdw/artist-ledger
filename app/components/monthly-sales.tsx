@@ -28,7 +28,7 @@ import {
   monthLabel,
 } from "../lib/ledger";
 
-function NumberEdit({
+export function NumberEdit({
   value,
   onChange,
   label,

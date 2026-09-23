@@ -8,6 +8,30 @@ import { continueSync } from "../lib/sync-job.server";
 import { sendReports } from "../lib/email.server";
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
+  const pdfMonth = new URL(request.url).searchParams.get("pdfMonth");
+  const pdfArtist = new URL(request.url).searchParams.get("pdfArtist");
+  if (pdfMonth && pdfArtist) {
+    const saved = await db.artistReport.findUnique({
+      where: {
+        shop_month_artistId: {
+          shop: session.shop,
+          month: pdfMonth,
+          artistId: pdfArtist,
+        },
+      },
+    });
+    const pdf =
+      saved && JSON.parse(saved.snapshot).hasPdf
+        ? await db.artistReport.pdf(saved.id, session.shop)
+        : undefined;
+    if (!pdf) return new Response("No saved PDF", { status: 404 });
+    return new Response(Buffer.from(pdf, "base64"), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Cache-Control": "private, no-store",
+      },
+    });
+  }
   const row = await getWorkspace(session.shop);
   const reports = await db.artistReport.findMany({
     where: { shop: session.shop },
@@ -25,7 +49,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     demo: false,
     shop: session.shop,
     emailReady: !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
-    sent: reports.map((r) => ({ ...r, snapshot: JSON.parse(r.snapshot) })),
+    sent: reports.map((r) => {
+      const snapshot = JSON.parse(r.snapshot);
+      return { ...r, snapshot, hasPdf: !!snapshot.hasPdf };
+    }),
   });
 }
 export async function action({ request }: ActionFunctionArgs) {
@@ -33,7 +60,7 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const body = z
       .object({
-        action: z.enum(["save", "sync", "send", "sendManual"]),
+        action: z.enum(["save", "sync", "send", "sendManual", "sendStatement"]),
         version: z.number().int().min(0),
         month: z
           .string()
@@ -43,6 +70,7 @@ export async function action({ request }: ActionFunctionArgs) {
           .string()
           .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
           .optional(),
+        pdf: z.string().max(8_000_000).optional(),
         data: z.unknown().optional(),
         artistIds: z.array(z.string()).max(1).optional(),
         jobId: z.string().uuid().optional(),
@@ -102,6 +130,8 @@ export async function action({ request }: ActionFunctionArgs) {
         ),
       );
     if (!body.artistIds) throw Error("Select artists");
+    if (body.action === "sendStatement" && !body.pdf)
+      throw Error("Generate the PDF before sending");
     return Response.json(
       await sendReports(
         session.shop,
@@ -115,6 +145,7 @@ export async function action({ request }: ActionFunctionArgs) {
               version: row.version,
             }
           : undefined,
+        body.action === "sendStatement" ? body.pdf : undefined,
       ),
     );
   } catch (e) {

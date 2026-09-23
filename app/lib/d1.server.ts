@@ -75,6 +75,14 @@ export function createDatabase(binding: () => D1Database) {
       },
     },
     artistReport: {
+      async pdf(id: string, shop: string) {
+        const rows = await sql(
+          "SELECT p.content FROM ReportPdf p JOIN ArtistReport r ON r.id=p.reportId WHERE r.id=? AND r.shop=? ORDER BY p.part",
+          id,
+          shop,
+        ).all<{ content: string }>();
+        return rows.results.map((r) => r.content).join("");
+      },
       async findUnique({
         where,
       }: {
@@ -101,17 +109,35 @@ export function createDatabase(binding: () => D1Database) {
         data: Pick<
           ReportRow,
           "id" | "shop" | "month" | "artistId" | "snapshot" | "status"
-        >;
+        > & { pdf?: string };
       }) {
-        await sql(
-          "INSERT INTO ArtistReport (id,shop,month,artistId,snapshot,status) VALUES (?,?,?,?,?,?)",
-          data.id,
-          data.shop,
-          data.month,
-          data.artistId,
-          data.snapshot,
-          data.status,
-        ).run();
+        const statements = [
+          sql(
+            "INSERT INTO ArtistReport (id,shop,month,artistId,snapshot,status) VALUES (?,?,?,?,?,?)",
+            data.id,
+            data.shop,
+            data.month,
+            data.artistId,
+            data.snapshot,
+            data.status,
+          ),
+        ];
+        // Keep each attachment chunk below D1's per-value limit; the batch is atomic.
+        if (data.pdf)
+          for (
+            let part = 0, offset = 0;
+            offset < data.pdf.length;
+            part++, offset += 500000
+          )
+            statements.push(
+              sql(
+                "INSERT INTO ReportPdf (reportId,part,content) VALUES (?,?,?)",
+                data.id,
+                part,
+                data.pdf.slice(offset, offset + 500000),
+              ),
+            );
+        await binding().batch(statements);
         return dated<ReportRow>(
           (await sql("SELECT * FROM ArtistReport WHERE id=?", data.id).first<
             Stored<ReportRow>

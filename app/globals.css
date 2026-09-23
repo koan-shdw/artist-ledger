@@ -1018,3 +1018,75 @@ input:focus-visible {
     flex-wrap: wrap;
   }
 }
+.inline-edit-link {
+  color: #2166b5;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  font-size: inherit;
+}
+.inline-artist-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  max-width: 380px;
+}
+.inline-artist-field input {
+  min-width: 110px;
+  width: 180px;
+}
+.inline-artist-field small {
+  width: 100%;
+  color: #a33c32;
+  white-space: normal;
+}
+.statement-sale {
+  border: 1px solid #e0e7e2;
+  border-radius: 9px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.statement-sale .item-choice {
+  border: 0;
+  padding: 0 0 12px;
+  align-items: start;
+}
+.statement-sale .item-choice b {
+  white-space: normal;
+  max-width: 40%;
+}
+.statement-sale-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.statement-sale-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  color: #65796b;
+}
+.statement-sale-fields input {
+  min-width: 0;
+  width: 100%;
+}
+.statement-sale-fields .statement-note {
+  grid-column: span 2;
+}
+.statement-sale-fields .sale-default {
+  color: #2166b5;
+  background: #f5f9ff;
+}
+.statement-sale-fields button {
+  align-self: end;
+}
+@media (max-width: 420px) {
+  .statement-sale-fields {
+    grid-template-columns: 1fr;
+  }
+  .statement-sale-fields .statement-note {
+    grid-column: auto;
+  }
+}

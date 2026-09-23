@@ -123,6 +123,7 @@ export type Ledger = {
   settings: Settings;
 };
 export type Report = {
+  hasPdf?: boolean;
   artist: Artist;
   month: string;
   lines: (SaleLine & {
@@ -146,6 +147,7 @@ export type Report = {
   replyTo: string;
 };
 export type Sent = {
+  hasPdf?: boolean;
   id: string;
   artistId: string;
   month: string;

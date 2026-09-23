@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS ReportPdf (
+ reportId TEXT NOT NULL REFERENCES ArtistReport(id) ON DELETE CASCADE,
+ part INTEGER NOT NULL,
+ content TEXT NOT NULL,
+ PRIMARY KEY (reportId, part)
+);

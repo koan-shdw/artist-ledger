@@ -115,9 +115,9 @@ export async function statementPdf(
       { title: string; units: number; net: number; cost: number }
     >();
     for (const line of current.lines) {
-      const key = line.productId + "\n" + line.title;
+      const key = line.id;
       const item = groups.get(key) ?? {
-        title: line.title,
+        title: `${line.order} · ${line.title} · Gallery ${(line.galleryBps ?? current.artist.galleryBps) / 100}%`,
         units: 0,
         net: 0,
         cost: 0,
