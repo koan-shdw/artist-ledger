@@ -6,7 +6,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { money, monthLabel, otherLineText, type Report } from "./ledger";
+import { money, monthLabel, otherLineAmount, type Report } from "./ledger";
 
 export type PdfStatement = { report: Report; saved?: boolean };
 
@@ -173,15 +173,77 @@ export async function statementPdf(
         });
       }
     }
+    if (current.otherLines?.length) {
+      const otherHead = () => {
+        ensure(75);
+        y -= 12;
+        text("Other report items", left, 12);
+        y -= 28;
+        page.drawRectangle({
+          x: left,
+          y: y - 8,
+          width: right - left,
+          height: 24,
+          color: rgb(0.94, 0.96, 0.96),
+        });
+        text("Item / terms", left + 7, 9);
+        aligned("Qty", 315, 9);
+        aligned("Amount", 389, 9);
+        aligned("Artist +/-", 470, 9);
+        aligned("Gallery cost", right - 7, 9);
+        y -= 27;
+      };
+      otherHead();
+      for (const line of current.otherLines) {
+        const total = line.quantity * line.unitAmount;
+        const amount = otherLineAmount(line);
+        const terms =
+          line.kind === "split_cost"
+            ? `Split cost | Artist ${line.artistBps / 100}% / Gallery ${(10000 - line.artistBps) / 100}%`
+            : line.kind === "sale"
+              ? `Additional sale | Cost/unit ${money(line.unitCost, current.currency)} | Artist ${line.artistBps / 100}% of profit`
+              : line.kind === "deduction"
+                ? "Deduct from artist"
+                : "Add to artist";
+        const title = wrap(
+          `${line.description} | ${terms} | ${money(line.unitAmount, current.currency)}/unit`,
+          245,
+          9,
+        );
+        const height = Math.max(32, title.length * 13 + 12);
+        if (y - height < 62) {
+          newPage();
+          otherHead();
+        }
+        const top = y;
+        for (const row of title) {
+          text(row, left + 7, 9);
+          y -= 13;
+        }
+        y = top;
+        aligned(String(line.quantity), 315, 9);
+        aligned(money(total, current.currency), 389, 9);
+        aligned(money(amount, current.currency), 470, 9);
+        aligned(
+          line.kind === "split_cost"
+            ? money(total + amount, current.currency)
+            : "—",
+          right - 7,
+          9,
+        );
+        y = top - height;
+        page.drawLine({
+          start: { x: left, y: y + 9 },
+          end: { x: right, y: y + 9 },
+          thickness: 0.5,
+          color: rule,
+        });
+      }
+    }
     for (const line of current.lines.filter((l) => l.adjusted)) {
       paragraph(
         `Adjustment - ${line.order}: ${line.title}. Sale ${money(line.originalNet ?? line.net, current.currency)} to ${money(line.net, current.currency)}; cost ${money(line.originalCost ?? line.cost, current.currency)} to ${money(line.cost, current.currency)}; gallery ${(line.galleryBps ?? current.artist.galleryBps) ? (line.galleryBps ?? current.artist.galleryBps) / 100 : 0}%.${line.note ? " Note: " + line.note : ""}`,
       );
-    }
-    if (current.otherLines?.length) {
-      paragraph("Other report items");
-      for (const line of current.otherLines)
-        paragraph(otherLineText(line, current.currency));
     }
     const varyingRates = current.lines.some(
       (l) =>
@@ -241,7 +303,7 @@ export async function statementPdf(
       ])
         paragraph(`Review: ${issue}`);
     paragraph(
-      "Orders placed in the selected month, net of discounts and refunded or removed quantities at the latest sync. Tax and shipping are excluded. Product costs apply to remaining units. Later adjustments may require reconciliation.",
+      "Orders placed in the selected month, net of discounts and refunded or removed quantities at the latest sync. Shopify tax and shipping are excluded; manually entered expenses are listed above. Product costs apply to remaining units. Later adjustments may require reconciliation.",
     );
     if (current.replyTo) paragraph(`Questions or invoices: ${current.replyTo}`);
   }
